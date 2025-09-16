@@ -1,50 +1,59 @@
-// server.js (direct routing by phone number)
 const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+
 const app = express();
-const http = require('http').createServer(app);
-const io = require('socket.io')(http, { cors: { origin: '*' } });
+const server = http.createServer(app);
+const io = new Server(server);
 
-app.use(express.static('public'));
+const PORT = process.env.PORT || 3000;
 
-// map phone -> socket.id
-const clients = new Map();
+// Serve static files (HTML)
+app.use(express.static(__dirname + '/public'));
 
+// Store connected users and messages
+const users = {}; // {socketId: number}
+const allowedNumbers = ['13058962443', '18573917861'];
+let messages = []; // {from, to, text, time}
+
+// Socket.io
 io.on('connection', (socket) => {
-  console.log('Socket connected', socket.id);
+  console.log('New connection:', socket.id);
 
+  // Join with number
   socket.on('join', (number) => {
-    socket.number = number;
-    clients.set(number, socket.id);
-    console.log('Joined', number, '->', socket.id);
+    if (!allowedNumbers.includes(number)) return;
+    users[socket.id] = number;
+    socket.emit('joined', {success:true, number});
+    console.log(number, 'joined');
+    // Send existing messages relevant to this user
+    const myNumber = number;
+    const relevant = messages.filter(m=> m.from===myNumber || m.to===myNumber);
+    socket.emit('loadMessages', relevant);
   });
 
+  // Receive message
   socket.on('message', (msg) => {
-    // Expect msg = {from, to, text, type, data, time}
-    const to = msg.to;
-    const from = socket.number || msg.from;
-    console.log(`Message from ${from} to ${to}:`, msg.text||'[image]');
+    const from = users[socket.id];
+    if(!from) return; // must be joined first
+    if(!allowedNumbers.includes(msg.to)) return; // only 2 numbers allowed
+    msg.from = from;
+    msg.time = new Date().toLocaleTimeString();
+    messages.push(msg);
 
-    // send to recipient only if we know them; also echo to sender for confirmation
-    const recipientSocketId = clients.get(to);
-    const payload = { from, to, text: msg.text, type: msg.type, data: msg.data, time: new Date().toLocaleTimeString() };
-
-    // send to recipient
-    if(recipientSocketId){
-      io.to(recipientSocketId).emit('message', payload);
-    } else {
-      // optional: store undelivered or broadcast (here we choose to still broadcast so dev can test)
-      socket.broadcast.emit('message', payload);
+    // send to recipient if connected
+    for(const [id, num] of Object.entries(users)){
+      if(num === msg.to){
+        io.to(id).emit('message', msg);
+      }
     }
-
-    // echo to sender (so sender sees message status locally)
-    socket.emit('message', payload);
+    // send back to sender to update their chat
+    socket.emit('message', msg);
   });
 
-  socket.on('disconnect', () => {
-    console.log('Disconnect', socket.number, socket.id);
-    if(socket.number) clients.delete(socket.number);
+  socket.on('disconnect', ()=>{
+    delete users[socket.id];
   });
 });
 
-const PORT = process.env.PORT || 3000;
-http.listen(PORT, ()=> console.log('Server running on', PORT));
+server.listen(PORT, ()=>console.log(`Server running on port ${PORT}`));
