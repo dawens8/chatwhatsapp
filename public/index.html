@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>WhatsApp-like (Advanced)</title>
+  <style>
+    :root{
+      --bg:#0b1416; --panel:#0f1919; --muted:#9aa9a9; --accent:#25D366;
+      --sent:#DCF8C6; --rec:#ffffff;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;height:100vh;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#061114,#0c1515);color:#e9f0ef;display:flex;align-items:center;justify-content:center;padding:12px}
+    .app{width:980px;height:720px;background:var(--panel);border-radius:12px;display:flex;overflow:hidden;box-shadow:0 20px 40px rgba(0,0,0,0.6)}
+    .left{width:320px;border-right:1px solid rgba(255,255,255,0.03);display:flex;flex-direction:column}
+    .right{flex:1;display:flex;flex-direction:column}
+    .top{padding:12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid rgba(255,255,255,0.02)}
+    .avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#2b7a6f,#2b2b7a);display:flex;align-items:center;justify-content:center;font-weight:700}
+    .title{font-weight:700}
+    .search{padding:8px;margin:10px;border-radius:10px;background:rgba(255,255,255,0.02);display:flex;gap:8px;align-items:center}
+    .search input{flex:1;background:transparent;border:0;color:inherit;outline:none}
+    .contacts{flex:1;overflow:auto;padding:8px}
+    .contact{display:flex;gap:8px;align-items:center;padding:10px;border-radius:8px;cursor:pointer}
+    .contact:hover{background:rgba(255,255,255,0.02)}
+    .contact.active{background:rgba(0,0,0,0.25)}
+    .chatHeader{padding:12px;border-bottom:1px solid rgba(255,255,255,0.02);display:flex;align-items:center;gap:12px}
+    .chatBody{flex:1;padding:18px;overflow:auto;background:linear-gradient(transparent, rgba(255,255,255,0.01));display:flex;flex-direction:column;gap:10px}
+    .bubble{max-width:70%;padding:10px 12px;border-radius:12px;position:relative;line-height:1.25}
+    .sent{align-self:flex-end;background:var(--sent);color:#000;border-bottom-right-radius:4px}
+    .rec{align-self:flex-start;background:var(--rec);color:#000;border-bottom-left-radius:4px}
+    .meta{font-size:11px;color:var(--muted);margin-top:6px;display:flex;gap:8px;align-items:center;justify-content:flex-end}
+    .inputArea{display:flex;gap:8px;padding:12px;border-top:1px solid rgba(255,255,255,0.02);align-items:center}
+    .inputArea input[type="text"]{flex:1;padding:10px;border-radius:20px;border:0;background:rgba(255,255,255,0.03);color:inherit;outline:none}
+    .btn{padding:8px 10px;border-radius:10px;border:0;background:var(--accent);color:#032;font-weight:700;cursor:pointer}
+    .small{font-size:12px;color:var(--muted)}
+    .topControls{margin-left:auto;display:flex;gap:8px}
+    .filePreview{max-width:260px;border-radius:8px;margin-top:6px}
+    .quickBtns{display:flex;gap:6px;margin-left:8px}
+  </style>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <div class="app">
+    <div class="left">
+      <div class="top">
+        <div class="avatar" id="meAvatar">ME</div>
+        <div>
+          <div class="title">WhatsApp-like</div>
+          <div class="small" id="status">Not connected</div>
+        </div>
+        <div class="topControls">
+          <button class="btn" id="setNumberBtn">Set number</button>
+        </div>
+      </div>
+
+      <div class="search"><input id="search" placeholder="Search contacts or message..."></div>
+      <div class="contacts" id="contactsList"></div>
+
+      <div style="padding:10px">
+        <div class="small">Quick contacts</div>
+        <div style="margin-top:8px" class="quickBtns">
+          <button class="btn" id="quick1">13058962443</button>
+          <button class="btn" id="quick2">18573917861</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="chatHeader">
+        <div class="avatar" id="chatAvatar">A</div>
+        <div>
+          <div id="chatName">No chat selected</div>
+          <div class="small" id="chatSub">—</div>
+        </div>
+        <div class="topControls">
+          <div class="small" id="myNumberDisplay">You: —</div>
+        </div>
+      </div>
+
+      <div class="chatBody" id="chatBody">
+        <div style="text-align:center;color:var(--muted);margin-top:60px">Select a contact or use Quick contacts to start chatting.</div>
+      </div>
+
+      <div class="inputArea">
+        <input id="targetNumber" type="text" placeholder="Send to number (optional)" style="width:220px;padding:8px;border-radius:10px;background:rgba(255,255,255,0.03);border:0;color:inherit"/>
+        <input id="messageInput" type="text" placeholder="Type a message..." />
+        <input id="fileInput" type="file" accept="image/*" style="display:none"/>
+        <button id="attachBtn" class="btn">📎</button>
+        <button id="sendBtn" class="btn">Send</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // Socket
+  const socket = io();
+  let myNumber = null;
+  const contacts = {}; // {number: {name, messages:[]}}
+
+  // DOM
+  const statusEl = document.getElementById('status');
+  const contactsList = document.getElementById('contactsList');
+  const chatBody = document.getElementById('chatBody');
+  const chatName = document.getElementById('chatName');
+  const chatSub = document.getElementById('chatSub');
+  const chatAvatar = document.getElementById('chatAvatar');
+  const myNumberDisplay = document.getElementById('myNumberDisplay');
+  const targetInput = document.getElementById('targetNumber');
+  const messageInput = document.getElementById('messageInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const attachBtn = document.getElementById('attachBtn');
+  const fileInput = document.getElementById('fileInput');
+  const setNumberBtn = document.getElementById('setNumberBtn');
+  const quick1 = document.getElementById('quick1');
+  const quick2 = document.getElementById('quick2');
+
+  // helpers
+  const now = ()=> new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  const uid = ()=> 'id-'+Math.random().toString(36).slice(2,9);
+
+  // set your number
+  function askNumber(){
+    const v = prompt('Enter your phone number (e.g. 13058962443):', myNumber || '');
+    if(!v) return;
+    myNumber = v.trim();
+    document.getElementById('meAvatar').textContent = myNumber.slice(-2);
+    myNumberDisplay.textContent = 'You: ' + myNumber;
+    statusEl.textContent = 'Connected as ' + myNumber;
+    socket.emit('join', myNumber);
+  }
+  setNumberBtn.onclick = askNumber;
+
+  // quick contacts
+  quick1.onclick = ()=> addOrOpenContact('13058962443');
+  quick2.onclick = ()=> addOrOpenContact('18573917861');
+
+  // add contact
+  function addOrOpenContact(number){
+    if(!number) return;
+    if(!contacts[number]) contacts[number] = {name: number, messages: []};
+    renderContacts();
+    openChat(number);
+    targetInput.value = number;
+  }
+
+  // render contacts
+  function renderContacts(filter=''){
+    contactsList.innerHTML = '';
+    Object.keys(contacts).forEach(num=>{
+      if(filter && !num.includes(filter) && !contacts[num].messages.some(m=> (m.text||'').toLowerCase().includes(filter.toLowerCase()))) return;
+      const c = document.createElement('div');
+      c.className = 'contact' + (currentChat === num ? ' active' : '');
+      c.onclick = ()=> openChat(num);
+      c.innerHTML = `<div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#2b7a6f,#2b2b7a);display:flex;align-items:center;justify-content:center">${num.slice(-2)}</div>
+        <div style="flex:1">
+          <div style="font-weight:700">${contacts[num].name}</div>
+          <div class="small">${contacts[num].messages.length? (contacts[num].messages.slice(-1)[0].text||'[image]') : 'No messages'}</div>
+        </div>`;
+      contactsList.appendChild(c);
+    });
+  }
+
+  // chat management
+  let currentChat = null;
+  function openChat(number){
+    currentChat = number;
+    const c = contacts[number];
+    chatName.textContent = c.name;
+    chatSub.textContent = number;
+    chatAvatar.textContent = number.slice(-2);
+    renderMessages(c);
+    targetInput.value = number;
+  }
+
+  function renderMessages(chat){
+    chatBody.innerHTML = '';
+    if(!chat) return;
+    chat.messages.forEach(m => {
+      const b = document.createElement('div');
+      b.className = 'bubble ' + (m.from === myNumber ? 'sent' : 'rec');
+      if(m.type === 'image'){
+        const img = document.createElement('img');
+        img.src = m.data; img.className = 'filePreview';
+        b.appendChild(img);
+      }
+      if(m.text) {
+        const p = document.createElement('div'); p.textContent = m.text; b.appendChild(p);
+      }
+      const meta = document.createElement('div'); meta.className='meta'; meta.textContent = m.time + (m.from===myNumber ? ' • You' : ' • ' + m.from);
+      b.appendChild(meta);
+      chatBody.appendChild(b);
+    });
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
+
+  // send message (with optional 'to' - supports directed messaging if server forwards payload)
+  function sendMessage({text='', type='text', data=null, to=null}){
+    if(!myNumber){ alert('Set your number first'); return; }
+    const toNum = to || targetInput.value || currentChat;
+    if(!toNum){ alert('Select or enter a target number'); return; }
+
+    const msg = { id: uid(), from: myNumber, to: toNum, text: text, type: type, data: data, time: now() };
+    // locally store
+    if(!contacts[toNum]) contacts[toNum] = {name: toNum, messages: []};
+    contacts[toNum].messages.push(msg);
+    renderContacts(); if(currentChat===toNum) renderMessages(contacts[toNum]);
+
+    // emit to server: server may rebroadcast (old server) or route to single recipient (updated server)
+    socket.emit('message', msg);
+  }
+
+  // UI events
+  sendBtn.onclick = ()=> {
+    const txt = messageInput.value.trim();
+    if(!txt) return;
+    sendMessage({text: txt, type:'text'});
+    messageInput.value = '';
+  };
+
+  messageInput.addEventListener('keydown', (e)=> { if(e.key==='Enter') sendBtn.click(); });
+
+  attachBtn.onclick = ()=> fileInput.click();
+  fileInput.addEventListener('change', (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ()=> {
+      sendMessage({type:'image', data: r.result});
+    };
+    r.readAsDataURL(f);
+    fileInput.value='';
+  });
+
+  // receive message
+  socket.on('connect', ()=> {
+    statusEl.textContent = 'Socket connected';
+  });
+
+  // Note: server may send message object differently. We handle both shapes:
+  socket.on('message', (msg)=>{
+    // msg may be: {from, text, time} (old server) OR full object {from,to,text,type,data,time}
+    // We only render if:
+    // - the message is addressed to me (msg.to === myNumber)
+    // - OR it's a broadcast from someone and includes no to (old server): then show it to everyone except sender
+    const from = msg.from || msg.sender;
+    const to = msg.to || null;
+    const time = msg.time || now();
+    const text = msg.text || '';
+    const type = msg.type || (msg.data? 'image' : 'text');
+    const data = msg.data || null;
+
+    // ignore if we don't know our number yet
+    if(!myNumber) return;
+
+    // decide whether to show
+    const show = (to && to === myNumber) || (!to && from !== myNumber);
+    if(!show) return;
+
+    // store under contact (either from or from->to)
+    const contactNum = from;
+    if(!contacts[contactNum]) contacts[contactNum] = {name: contactNum, messages: []};
+    const m = { id: uid(), from: from, to: to, text: text, type: type, data: data, time: time };
+    contacts[contactNum].messages.push(m);
+    renderContacts();
+    if(currentChat === contactNum) renderMessages(contacts[contactNum]);
+  });
+
+  // search
+  document.getElementById('search').addEventListener('input', (e)=> renderContacts(e.target.value));
+
+  // initial demo: add quick contacts to list
+  ['13058962443','18573917861'].forEach(n => { contacts[n] = {name:n,messages:[]}; });
+  renderContacts();
+
+  // helpful: ask number on load
+  setTimeout(()=> askNumber(), 300);
+</script>
+</body>
+</html>
