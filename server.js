@@ -8,69 +8,74 @@ const fs = require('fs');
 
 const upload = multer({ dest: 'uploads/' });
 
-app.use(express.static('public'));
-app.use('/uploads', express.static(path.join(__dirname,'uploads')));
+app.use(express.static(__dirname)); // serve index.html and dashboard.html
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-let users = {}; // {number: {socketId, photo, videoStatus}}
-let messages = {}; // {number: [{from,text,time,type}]}
-
-app.get('/', (req,res)=>res.sendFile(__dirname+'/public/index.html'));
-app.get('/dashboard', (req,res)=>res.sendFile(__dirname+'/public/dashboard.html'));
-
-// Upload photo or video status
+// Upload endpoint for dashboard (photo/video)
 app.post('/upload', upload.single('file'), (req,res)=>{
-  const number = req.body.number;
-  const type = req.body.type; // photo or video
-  if(!users[number]) return res.status(400).send("User not found");
-  const filename = '/uploads/'+req.file.filename;
-  if(type==='photo') users[number].photo = filename;
-  if(type==='video') users[number].videoStatus = filename;
-  io.emit('statusUpdate', users);
-  res.json({success:true,url:filename});
+  if(!req.file) return res.status(400).send('No file uploaded');
+  res.json({filePath:'/uploads/'+req.file.filename});
 });
+
+// Simple dashboard page
+app.get('/dashboard', (req,res)=>{
+  res.sendFile(__dirname+'/dashboard.html');
+});
+
+const messages = {}; // store messages per number
+const calls = {};    // call state
 
 io.on('connection', socket=>{
-  console.log("New socket:", socket.id);
+  console.log('User connected:', socket.id);
 
   socket.on('join', number=>{
-    if(!users[number]) users[number]={socketId: socket.id, photo:"", videoStatus:""};
-    users[number].socketId = socket.id;
     socket.number = number;
-    io.emit('statusUpdate', users);
+    socket.join(number);
+    if(messages[number]) socket.emit('loadMessages', messages[number]);
   });
 
-  socket.on('message', data=>{
-    const time = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    const msg = {from: socket.number, to: data.to, text: data.text, time, type:'text'};
-    if(!messages[data.to]) messages[data.to]=[];
-    messages[data.to].push(msg);
-    if(users[data.to]) io.to(users[data.to].socketId).emit('message', msg);
-    io.to(socket.id).emit('message', msg);
+  socket.on('message', msg=>{
+    const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const fullMsg = {...msg, from: socket.number, time};
+    if(!messages[msg.to]) messages[msg.to] = [];
+    messages[msg.to].push(fullMsg);
+    if(!messages[socket.number]) messages[socket.number] = [];
+    messages[socket.number].push(fullMsg);
+    io.to(msg.to).emit('message', fullMsg);
+    io.to(socket.number).emit('message', fullMsg);
   });
 
-  socket.on('voice', data=>{
-    const time = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    const msg = {from: socket.number, to:data.to, audio:data.audio, time, type:'voice'};
-    if(!messages[data.to]) messages[data.to]=[];
-    messages[data.to].push(msg);
-    if(users[data.to]) io.to(users[data.to].socketId).emit('voice', msg);
-    io.to(socket.id).emit('voice', msg);
+  socket.on('voice', msg=>{
+    const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const fullMsg = {...msg, from: socket.number, time};
+    if(!messages[msg.to]) messages[msg.to] = [];
+    messages[msg.to].push(fullMsg);
+    io.to(msg.to).emit('voice', fullMsg);
+    io.to(socket.number).emit('voice', fullMsg);
   });
 
-  // WebRTC signaling for live video
-  socket.on('webrtc-offer', data=>{ if(users[data.to]) io.to(users[data.to].socketId).emit('webrtc-offer',{from: socket.number, sdp: data.sdp}); });
-  socket.on('webrtc-answer', data=>{ if(users[data.to]) io.to(users[data.to].socketId).emit('webrtc-answer',{from: socket.number, sdp: data.sdp}); });
-  socket.on('webrtc-candidate', data=>{ if(users[data.to]) io.to(users[data.to].socketId).emit('webrtc-candidate',{from: socket.number, candidate: data.candidate}); });
+  socket.on('call', data=>{
+    calls[data.to] = {from: socket.number, active:false};
+    io.to(data.to).emit('incomingCall', {from: socket.number});
+  });
 
-  // Calls
-  socket.on('call', data=>{ if(users[data.to]) io.to(users[data.to].socketId).emit('incomingCall',{from: socket.number}); });
-  socket.on('answerCall', data=>{ if(users[data.to]) io.to(users[data.to].socketId).emit('callAnswered',{from: socket.number}); });
-  socket.on('declineCall', data=>{ if(users[data.to]) io.to(users[data.to].socketId).emit('callDeclined',{from: socket.number}); });
+  socket.on('answerCall', data=>{
+    if(calls[socket.number] && calls[socket.number].from === data.to){
+      calls[socket.number].active = true;
+      io.to(data.to).emit('callAnswered', {from: socket.number});
+    }
+  });
+
+  socket.on('declineCall', data=>{
+    if(calls[socket.number] && calls[socket.number].from === data.to){
+      io.to(data.to).emit('callDeclined', {from: socket.number});
+      delete calls[socket.number];
+    }
+  });
 
   socket.on('disconnect', ()=>{
-    if(socket.number) delete users[socket.number];
-    io.emit('statusUpdate', users);
+    console.log('User disconnected:', socket.id);
   });
 });
 
-http.listen(3000, ()=>console.log("Server running on http://localhost:3000"));
+http.listen(3000, ()=>console.log('Server running on http://localhost:3000'));
