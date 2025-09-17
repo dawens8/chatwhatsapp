@@ -4,78 +4,91 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
+
+app.use(express.static('public'));
+app.use(express.json({limit:'50mb'}));
 
 const upload = multer({ dest: 'uploads/' });
 
-app.use(express.static(__dirname)); // serve index.html and dashboard.html
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+let users = {}; // {number:{socketId, photo, video}}
+let messages = {}; // {number:[{from,text,time,type}]}
 
-// Upload endpoint for dashboard (photo/video)
-app.post('/upload', upload.single('file'), (req,res)=>{
-  if(!req.file) return res.status(400).send('No file uploaded');
-  res.json({filePath:'/uploads/'+req.file.filename});
+// Routes
+app.get('/', (req,res)=>res.sendFile(__dirname+'/public/index.html'));
+app.get('/dashboard', (req,res)=>res.sendFile(__dirname+'/public/dashboard.html'));
+
+// Upload photo
+app.post('/uploadPhoto', upload.single('photo'), (req,res)=>{
+    const {number} = req.body;
+    if(!users[number]) users[number]={};
+    users[number].photo = '/'+req.file.path;
+    io.emit('photoUpdated', {number, photo:users[number].photo});
+    res.send({success:true});
 });
 
-// Simple dashboard page
-app.get('/dashboard', (req,res)=>{
-  res.sendFile(__dirname+'/dashboard.html');
+// Upload video (status)
+app.post('/uploadVideo', upload.single('video'), (req,res)=>{
+    const {number} = req.body;
+    if(!users[number]) users[number]={};
+    users[number].video = '/'+req.file.path;
+    io.emit('videoUpdated', {number, video:users[number].video});
+    res.send({success:true});
 });
 
-const messages = {}; // store messages per number
-const calls = {};    // call state
-
+// Socket.IO
 io.on('connection', socket=>{
-  console.log('User connected:', socket.id);
+    console.log('New connection', socket.id);
 
-  socket.on('join', number=>{
-    socket.number = number;
-    socket.join(number);
-    if(messages[number]) socket.emit('loadMessages', messages[number]);
-  });
+    socket.on('join', number=>{
+        if(!users[number]) users[number]={};
+        users[number].socketId = socket.id;
+        socket.number = number;
+        io.emit('statusUpdate', users);
+    });
 
-  socket.on('message', msg=>{
-    const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    const fullMsg = {...msg, from: socket.number, time};
-    if(!messages[msg.to]) messages[msg.to] = [];
-    messages[msg.to].push(fullMsg);
-    if(!messages[socket.number]) messages[socket.number] = [];
-    messages[socket.number].push(fullMsg);
-    io.to(msg.to).emit('message', fullMsg);
-    io.to(socket.number).emit('message', fullMsg);
-  });
+    socket.on('message', data=>{
+        const time = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+        const msg = {from: socket.number, to:data.to, text:data.text, time, type:data.type||'text'};
+        if(!messages[data.to]) messages[data.to]=[];
+        messages[data.to].push(msg);
+        if(users[data.to] && users[data.to].socketId) io.to(users[data.to].socketId).emit('message', msg);
+        io.to(socket.id).emit('message', msg);
+    });
 
-  socket.on('voice', msg=>{
-    const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    const fullMsg = {...msg, from: socket.number, time};
-    if(!messages[msg.to]) messages[msg.to] = [];
-    messages[msg.to].push(fullMsg);
-    io.to(msg.to).emit('voice', fullMsg);
-    io.to(socket.number).emit('voice', fullMsg);
-  });
+    socket.on('voice', data=>{
+        const time = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+        const msg = {from: socket.number, to:data.to, audio:data.audio, time, type:'voice'};
+        if(!messages[data.to]) messages[data.to]=[];
+        messages[data.to].push(msg);
+        if(users[data.to] && users[data.to].socketId) io.to(users[data.to].socketId).emit('voice', msg);
+        io.to(socket.id).emit('voice', msg);
+    });
 
-  socket.on('call', data=>{
-    calls[data.to] = {from: socket.number, active:false};
-    io.to(data.to).emit('incomingCall', {from: socket.number});
-  });
+    // WebRTC signaling for video
+    socket.on('webrtc-offer', data=>{
+        if(users[data.to] && users[data.to].socketId) io.to(users[data.to].socketId).emit('webrtc-offer',{from:socket.number,sdp:data.sdp});
+    });
+    socket.on('webrtc-answer', data=>{
+        if(users[data.to] && users[data.to].socketId) io.to(users[data.to].socketId).emit('webrtc-answer',{from:socket.number,sdp:data.sdp});
+    });
+    socket.on('webrtc-candidate', data=>{
+        if(users[data.to] && users[data.to].socketId) io.to(users[data.to].socketId).emit('webrtc-candidate',{from:socket.number,candidate:data.candidate});
+    });
 
-  socket.on('answerCall', data=>{
-    if(calls[socket.number] && calls[socket.number].from === data.to){
-      calls[socket.number].active = true;
-      io.to(data.to).emit('callAnswered', {from: socket.number});
-    }
-  });
+    socket.on('call', data=>{
+        if(users[data.to] && users[data.to].socketId) io.to(users[data.to].socketId).emit('incomingCall',{from:socket.number});
+    });
+    socket.on('answerCall', data=>{
+        if(users[data.to] && users[data.to].socketId) io.to(users[data.to].socketId).emit('callAnswered',{from:socket.number});
+    });
+    socket.on('declineCall', data=>{
+        if(users[data.to] && users[data.to].socketId) io.to(users[data.to].socketId).emit('callDeclined',{from:socket.number});
+    });
 
-  socket.on('declineCall', data=>{
-    if(calls[socket.number] && calls[socket.number].from === data.to){
-      io.to(data.to).emit('callDeclined', {from: socket.number});
-      delete calls[socket.number];
-    }
-  });
-
-  socket.on('disconnect', ()=>{
-    console.log('User disconnected:', socket.id);
-  });
+    socket.on('disconnect', ()=>{
+        if(socket.number) delete users[socket.number].socketId;
+        io.emit('statusUpdate', users);
+    });
 });
 
 http.listen(3000, ()=>console.log('Server running on http://localhost:3000'));
