@@ -1,7 +1,7 @@
 {
   "name": "two-number-live-chat",
   "version": "1.0.0",
-  "description": "2-number chat & call system with voice and profile",
+  "description": "2-number chat & call system with voice, profile, and live video dashboard",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
