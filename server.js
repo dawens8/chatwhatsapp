@@ -1,108 +1,67 @@
 const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
+const http = require('http').createServer(app);
+const io = require('socket.io')(http);
 
-const PORT = process.env.PORT || 3000;
+app.use(express.static('public'));
 
-// Serve static files (HTML + assets)
-app.use(express.static(__dirname + '/public'));
+let users = {}; // {number: socketId}
+let messages = {}; // {number: [{from, text, time, type}]}
 
-const allowedNumbers = ['13058962443', '18573917861'];
-const users = {}; // {socketId: number}
-let messages = [];
+// Serve index.html
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
 
-// Socket.io
-io.on('connection', (socket) => {
+// Serve dashboard
+app.get('/dashboard', (req, res) => {
+  res.sendFile(__dirname + '/public/dashboard.html');
+});
+
+// Socket connections
+io.on('connection', socket => {
   console.log('New connection:', socket.id);
 
-  socket.on('join', (number) => {
-    if (!allowedNumbers.includes(number)) {
-      socket.emit('joined', { success: false });
-      return;
-    }
-    users[socket.id] = number;
-    socket.emit('joined', { success: true, number });
-    console.log(number, 'joined');
-
-    // Send chat history
-    const relevant = messages.filter(
-      (m) => m.from === number || m.to === number
-    );
-    socket.emit('loadMessages', relevant);
+  socket.on('join', number => {
+    users[number] = socket.id;
+    socket.number = number;
+    io.emit('statusUpdate', users); // update dashboard
   });
 
-  socket.on('message', (msg) => {
-    const from = users[socket.id];
-    if (!from) return;
-    if (!allowedNumbers.includes(msg.to)) return;
-
-    msg.from = from;
-    msg.time = new Date().toLocaleTimeString();
-    messages.push(msg);
-
-    // Send to recipient
-    for (const [id, num] of Object.entries(users)) {
-      if (num === msg.to) {
-        io.to(id).emit('message', msg);
-      }
-    }
-
-    // Send back to sender
-    socket.emit('message', msg);
+  socket.on('message', data => {
+    const time = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    const msg = {from: socket.number, to: data.to, text: data.text, time, type: data.type || 'text'};
+    if(!messages[data.to]) messages[data.to]=[];
+    messages[data.to].push(msg);
+    if(users[data.to]) io.to(users[data.to]).emit('message', msg);
+    io.to(socket.id).emit('message', msg);
   });
 
-  // Voice message
-  socket.on('voice', (msg) => {
-    const from = users[socket.id];
-    if (!from) return;
-    msg.from = from;
-    msg.time = new Date().toLocaleTimeString();
-    for (const [id, num] of Object.entries(users)) {
-      if (num === msg.to) {
-        io.to(id).emit('voice', msg);
-      }
-    }
-    socket.emit('voice', msg);
+  socket.on('voice', data => {
+    const time = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    const msg = {from: socket.number, to: data.to, audio: data.audio, time, type:'voice'};
+    if(!messages[data.to]) messages[data.to]=[];
+    messages[data.to].push(msg);
+    if(users[data.to]) io.to(users[data.to]).emit('voice', msg);
+    io.to(socket.id).emit('voice', msg);
   });
 
-  // Call simulation
-  socket.on('call', (data) => {
-    const from = users[socket.id];
-    if (!from) return;
-    for (const [id, num] of Object.entries(users)) {
-      if (num === data.to) {
-        io.to(id).emit('incomingCall', { from });
-      }
-    }
+  socket.on('call', data => {
+    if(users[data.to]) io.to(users[data.to]).emit('incomingCall', {from: socket.number});
   });
 
-  socket.on('answerCall', (data) => {
-    const from = users[socket.id];
-    for (const [id, num] of Object.entries(users)) {
-      if (num === data.to) {
-        io.to(id).emit('callAnswered', { from });
-      }
-    }
+  socket.on('answerCall', data => {
+    if(users[data.to]) io.to(users[data.to]).emit('callAnswered', {from: socket.number});
   });
 
-  socket.on('declineCall', (data) => {
-    const from = users[socket.id];
-    for (const [id, num] of Object.entries(users)) {
-      if (num === data.to) {
-        io.to(id).emit('callDeclined', { from });
-      }
-    }
+  socket.on('declineCall', data => {
+    if(users[data.to]) io.to(users[data.to]).emit('callDeclined', {from: socket.number});
   });
 
   socket.on('disconnect', () => {
-    delete users[socket.id];
+    if(socket.number) delete users[socket.number];
+    io.emit('statusUpdate', users);
   });
 });
 
-server.listen(PORT, () =>
-  console.log(`✅ Server running on http://localhost:${PORT}`)
-);
+http.listen(3000, ()=> console.log("Server running on http://localhost:3000"));
