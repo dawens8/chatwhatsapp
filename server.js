@@ -2,18 +2,25 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
+const path = require('path');
 
+// Serve all files in current folder
 app.use(express.static(__dirname));
 
-const messages = []; // store messages
-let callState = {}; // {number: {incomingFrom, isInCall}}
+// Serve index.html at root
+app.get('/', (req,res)=>{
+  res.sendFile(path.join(__dirname,'index.html'));
+});
+
+const messages = [];
+let callState = {};
 
 io.on('connection', socket=>{
   console.log('a user connected');
 
   socket.on('join', number=>{
     socket.number = number;
-    console.log(number, 'joined');
+    console.log(number,'joined');
   });
 
   socket.on('message', msg=>{
@@ -46,7 +53,7 @@ io.on('connection', socket=>{
   });
 
   socket.on('disconnect', ()=>{
-    console.log(socket.number, 'disconnected');
+    console.log(socket.number,'disconnected');
   });
 });
 
