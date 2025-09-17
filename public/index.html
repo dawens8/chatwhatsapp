@@ -1,25 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>2-Number Live Chat & Call</title>
-<style>
-body{font-family: Arial,sans-serif; display:flex; justify-content:center; background:#0c1515; color:white; padding:20px;}
-.container{width:600px; background:#1a1f22; padding:20px; border-radius:10px;}
-.hidden{display:none;}
-input, button{padding:8px; margin:5px 0; width:100%; border-radius:5px; border:none;}
-#chatBox{height:300px; background:#111; overflow:auto; padding:10px; border-radius:5px; margin-bottom:10px;}
-.bubble{padding:8px 12px; border-radius:8px; margin:5px 0; max-width:70%;}
-.sent{background:#25D366; color:#000; align-self:flex-end;}
-.rec{background:#fff; color:#000; align-self:flex-start;}
-.callStatus{margin:5px 0; color:#0f0;}
-</style>
-<script src="/socket.io/socket.io.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2-Number Live Chat & Call</title>
+  <style>
+    body {font-family: Arial,sans-serif; display:flex; justify-content:center; background:#0c1515; color:white; padding:20px;}
+    .container{width:600px; background:#1a1f22; padding:20px; border-radius:10px;}
+    .hidden{display:none;}
+    input, button{padding:8px; margin:5px 0; width:100%; border-radius:5px; border:none;}
+    #chatBox{height:300px; background:#111; overflow:auto; padding:10px; border-radius:5px; margin-bottom:10px; display:flex; flex-direction:column;}
+    .bubble{padding:8px 12px; border-radius:8px; margin:5px 0; max-width:70%;}
+    .sent{background:#25D366; color:#000; align-self:flex-end;}
+    .rec{background:#fff; color:#000; align-self:flex-start;}
+    .callStatus{margin:5px 0; color:#0f0;}
+    .header{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
+    .header img{width:40px; height:40px; border-radius:50%;}
+  </style>
+  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 <div class="container">
 
+  <!-- Login -->
   <div id="loginArea">
     <h3>Login with your number</h3>
     <input type="text" id="numberInput" placeholder="Enter your number"/>
@@ -31,11 +34,21 @@ input, button{padding:8px; margin:5px 0; width:100%; border-radius:5px; border:n
     <div id="loginStatus"></div>
   </div>
 
+  <!-- Chat -->
   <div id="chatArea" class="hidden">
-    <h3>Chat - Number: <span id="currentNumber"></span></h3>
+    <div class="header">
+      <img id="profileImg" src="" alt="profile"/>
+      <div>
+        <div id="currentName" style="font-weight:bold"></div>
+        <div id="currentNumber"></div>
+      </div>
+    </div>
+
     <div id="chatBox"></div>
+
     <input type="text" id="messageInput" placeholder="Type message..."/>
     <button id="sendBtn">Send</button>
+    <button id="recordBtn">🎤 Record</button>
     <button id="callBtn">📞 Call</button>
     <div id="callStatus" class="callStatus hidden">Calling...</div>
   </div>
@@ -44,88 +57,138 @@ input, button{padding:8px; margin:5px 0; width:100%; border-radius:5px; border:n
 
 <script>
 const socket = io();
-const allowedNumbers = ['13058962443','18573917861'];
+const allowedNumbers = ["13058962443","18573917861"];
 let myNumber = null;
 let verificationCode = null;
 
-const loginArea = document.getElementById('loginArea');
-const codeArea = document.getElementById('codeArea');
-const loginStatus = document.getElementById('loginStatus');
-const numberInput = document.getElementById('numberInput');
-const sendCodeBtn = document.getElementById('sendCodeBtn');
-const codeInput = document.getElementById('codeInput');
-const verifyBtn = document.getElementById('verifyBtn');
+// Profiles
+const profiles = {
+  "13058962443": {name:"My Wife", photo:"https://via.placeholder.com/40x40?text=W"},
+  "18573917861": {name:"Me", photo:"https://via.placeholder.com/40x40?text=ME"}
+};
 
-const chatArea = document.getElementById('chatArea');
-const chatBox = document.getElementById('chatBox');
-const currentNumber = document.getElementById('currentNumber');
-const messageInput = document.getElementById('messageInput');
-const sendBtn = document.getElementById('sendBtn');
-const callBtn = document.getElementById('callBtn');
-const callStatus = document.getElementById('callStatus');
+// DOM
+const loginArea=document.getElementById("loginArea");
+const codeArea=document.getElementById("codeArea");
+const loginStatus=document.getElementById("loginStatus");
+const numberInput=document.getElementById("numberInput");
+const sendCodeBtn=document.getElementById("sendCodeBtn");
+const codeInput=document.getElementById("codeInput");
+const verifyBtn=document.getElementById("verifyBtn");
+
+const chatArea=document.getElementById("chatArea");
+const chatBox=document.getElementById("chatBox");
+const currentNumber=document.getElementById("currentNumber");
+const currentName=document.getElementById("currentName");
+const profileImg=document.getElementById("profileImg");
+const messageInput=document.getElementById("messageInput");
+const sendBtn=document.getElementById("sendBtn");
+const recordBtn=document.getElementById("recordBtn");
+const callBtn=document.getElementById("callBtn");
+const callStatus=document.getElementById("callStatus");
 
 // Step1: send code
-sendCodeBtn.onclick = ()=>{
-  const num = numberInput.value.trim();
+sendCodeBtn.onclick=()=>{
+  const num=numberInput.value.trim();
   if(!allowedNumbers.includes(num)) return alert("Number not allowed!");
-  myNumber = num;
-  verificationCode = Math.floor(1000+Math.random()*9000);
+  myNumber=num;
+  verificationCode=Math.floor(1000+Math.random()*9000);
   alert("Your verification code: "+verificationCode);
-  codeArea.classList.remove('hidden');
+  codeArea.classList.remove("hidden");
 }
 
-// Step2: verify code
-verifyBtn.onclick = ()=>{
+// Step2: verify
+verifyBtn.onclick=()=>{
   if(codeInput.value.trim()==verificationCode){
-    loginStatus.textContent="Verified! Access granted.";
-    loginArea.classList.add('hidden');
-    chatArea.classList.remove('hidden');
-    currentNumber.textContent=myNumber;
-    socket.emit('join', myNumber);
+    loginStatus.textContent="Verified!";
+    loginArea.classList.add("hidden");
+    chatArea.classList.remove("hidden");
+    socket.emit("join", myNumber);
+
+    const otherNumber = allowedNumbers.find(n=>n!==myNumber);
+    currentNumber.textContent=otherNumber;
+    currentName.textContent=profiles[otherNumber].name;
+    profileImg.src=profiles[otherNumber].photo;
   }else{ alert("Incorrect code!"); }
 }
 
 // Step3: send message
-sendBtn.onclick = ()=>{
-  const txt = messageInput.value.trim();
+sendBtn.onclick=()=>{
+  const txt=messageInput.value.trim();
   if(!txt) return;
-  const otherNumber = allowedNumbers.find(n=>n!==myNumber);
-  const msg = {to: otherNumber,text: txt};
-  socket.emit('message', msg);
-  messageInput.value='';
+  const otherNumber=allowedNumbers.find(n=>n!==myNumber);
+  const msg={to:otherNumber,text:txt};
+  socket.emit("message", msg);
+  messageInput.value="";
 }
 
 // Receive messages
-socket.on('message', msg=>{
-  const div = document.createElement('div');
-  div.className='bubble '+(msg.from===myNumber?'sent':'rec');
-  div.innerHTML=`<div>${msg.text}</div><div style="font-size:10px;color:#aaa">${msg.from} • ${msg.time}</div>`;
+socket.on("message", msg=>{
+  addBubble(msg.text, msg.from===myNumber?"sent":"rec", msg.from, msg.time);
+});
+
+socket.on("voice", msg=>{
+  const audio=document.createElement("audio");
+  audio.controls=true;
+  audio.src=msg.audio;
+  const div=document.createElement("div");
+  div.className="bubble "+(msg.from===myNumber?"sent":"rec");
+  div.appendChild(audio);
   chatBox.appendChild(div);
   chatBox.scrollTop=chatBox.scrollHeight;
 });
 
-// Load previous messages
-socket.on('loadMessages', msgs=>{
-  msgs.forEach(msg=> socket.emit('message', msg));
-});
-
-// Call simulation
-callBtn.onclick = ()=>{
-  callStatus.classList.remove('hidden');
-  callStatus.textContent="Calling...";
-  socket.emit('call');
+function addBubble(text, cls, from, time){
+  const div=document.createElement("div");
+  div.className="bubble "+cls;
+  div.innerHTML=`<div>${text}</div><div style="font-size:10px;color:#aaa">${from} • ${time}</div>`;
+  chatBox.appendChild(div);
+  chatBox.scrollTop=chatBox.scrollHeight;
 }
 
-// Incoming call
-socket.on('incomingCall', data=>{
-  callStatus.classList.remove('hidden');
-  callStatus.textContent="Incoming call from "+data.from;
-  setTimeout(()=> callStatus.textContent="Call connected",1000);
-  setTimeout(()=> callStatus.textContent="Call ended",5000);
-  setTimeout(()=> callStatus.classList.add('hidden'),6000);
+// Voice recording
+let mediaRecorder;
+let audioChunks=[];
+recordBtn.onclick=async ()=>{
+  if(!mediaRecorder || mediaRecorder.state==="inactive"){
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    mediaRecorder=new MediaRecorder(stream);
+    mediaRecorder.ondataavailable=e=>audioChunks.push(e.data);
+    mediaRecorder.onstop=()=>{
+      const blob=new Blob(audioChunks,{type:"audio/webm"});
+      audioChunks=[];
+      const reader=new FileReader();
+      reader.onloadend=()=>{
+        const otherNumber=allowedNumbers.find(n=>n!==myNumber);
+        socket.emit("voice",{to:otherNumber,audio:reader.result});
+      };
+      reader.readAsDataURL(blob);
+    };
+    mediaRecorder.start();
+    recordBtn.textContent="⏹ Stop";
+  }else{
+    mediaRecorder.stop();
+    recordBtn.textContent="🎤 Record";
+  }
+};
+
+// Call simulation
+callBtn.onclick=()=>{
+  const otherNumber=allowedNumbers.find(n=>n!==myNumber);
+  callStatus.classList.remove("hidden");
+  callStatus.textContent="Calling "+profiles[otherNumber].name+"...";
+  socket.emit("call", otherNumber);
+}
+
+socket.on("incomingCall", data=>{
+  callStatus.classList.remove("hidden");
+  callStatus.textContent="Incoming call from "+profiles[data.from].name+"...";
+  setTimeout(()=>callStatus.textContent="Call connected",2000);
+  setTimeout(()=>callStatus.textContent="Call ended",7000);
+  setTimeout(()=>callStatus.classList.add("hidden"),9000);
 });
 
-messageInput.addEventListener('keydown',(e)=>{if(e.key==='Enter')sendBtn.click();});
+messageInput.addEventListener("keydown",(e)=>{if(e.key==="Enter")sendBtn.click();});
 </script>
 </body>
 </html>
