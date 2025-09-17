@@ -4,12 +4,12 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const path = require('path');
 
-// Serve all files in current folder
-app.use(express.static(__dirname));
+// Serve static files from 'public' folder
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Serve index.html at root
 app.get('/', (req,res)=>{
-  res.sendFile(path.join(__dirname,'index.html'));
+  res.sendFile(path.join(__dirname, 'public','index.html'));
 });
 
 const messages = [];
