@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard - Live Status</title>
+<style>
+body{font-family:Arial,sans-serif; background:#0c1515; color:white; padding:20px;}
+h2{margin-bottom:10px;}
+table{width:100%; border-collapse:collapse;}
+th, td{border:1px solid #555; padding:8px; text-align:left;}
+th{background:#222;}
+.online{color:#0f0;}
+.offline{color:#f00;}
+</style>
+<script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+<h2>Live Status Dashboard</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Number</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody id="statusTable"></tbody>
+</table>
+
+<script>
+const socket = io();
+const allowedNumbers = ['13058962443','18573917861'];
+
+function renderStatus(users){
+  const tbody = document.getElementById('statusTable');
+  tbody.innerHTML='';
+  allowedNumbers.forEach(num=>{
+    const tr = document.createElement('tr');
+    const status = users[num]? 'Online':'Offline';
+    tr.innerHTML=`<td>${num}</td><td class="${users[num]?'online':'offline'}">${status}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+socket.on('statusUpdate', users=>{
+  renderStatus(users);
+});
+</script>
+</body>
+</html>
