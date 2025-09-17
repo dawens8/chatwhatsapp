@@ -1,5 +1,5 @@
 {
-  "name": "whatsapp-clone",
+  "name": "secure-chat-live",
   "version": "1.0.0",
   "description": "Simple WhatsApp-like chat app with Node.js, Express, and Socket.io",
   "main": "server.js",
@@ -7,7 +7,7 @@
     "start": "node server.js"
   },
   "keywords": ["chat", "whatsapp", "socket.io", "express"],
-  "author": "you",
+  "author": "dawens",
   "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
