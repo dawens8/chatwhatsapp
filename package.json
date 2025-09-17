@@ -1,5 +1,5 @@
 {
-  "name": "secure-chat-live",
+  "name": "two-number-cha",
   "version": "1.0.0",
   "description": "Simple WhatsApp-like chat app with Node.js, Express, and Socket.io",
   "main": "server.js",
