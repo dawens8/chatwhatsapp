@@ -1,31 +1,34 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>2-Number Live Chat & Call</title>
-  <style>
-    body{font-family: Arial,sans-serif; display:flex; justify-content:center; background:#0c1515; color:white; padding:20px;}
-    .container{width:600px; background:#1a1f22; padding:20px; border-radius:10px;}
-    .hidden{display:none;}
-    input, button{padding:8px; margin:5px 0; width:100%; border-radius:5px; border:none;}
-    #chatBox{height:300px; background:#111; overflow:auto; padding:10px; border-radius:5px; margin-bottom:10px; display:flex; flex-direction:column;}
-    .bubble{padding:8px 12px; border-radius:8px; margin:5px 0; max-width:70%;}
-    .sent{background:#25D366; color:#000; align-self:flex-end;}
-    .rec{background:#fff; color:#000; align-self:flex-start;}
-    .header{display:flex; align-items:center; margin-bottom:10px;}
-    .header img{width:40px; height:40px; border-radius:50%; margin-right:10px;}
-    .callStatus{margin:5px 0; color:#0f0;}
-    .chat-controls{display:flex; gap:5px;}
-    .chat-controls input{flex:1;}
-  </style>
-  <script src="/socket.io/socket.io.js"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>2-Number Live Chat & Call</title>
+<style>
+body{font-family: Arial,sans-serif; display:flex; justify-content:center; background:#0c1515; color:white; margin:0; height:100vh;}
+.container{width:90%; max-width:1200px; background:#1a1f22; padding:20px; border-radius:10px; display:flex; flex-direction:column; height:95vh;}
+.hidden{display:none;}
+input, button{padding:10px; margin:5px 0; border-radius:5px; border:none;}
+#chatBox{flex:1; background:#111; overflow:auto; padding:10px; border-radius:5px; display:flex; flex-direction:column; margin-bottom:10px; font-size:1.2em;}
+.bubble{padding:12px 16px; border-radius:12px; margin:5px 0; max-width:70%; font-size:1em;}
+.sent{background:#25D366; color:#000; align-self:flex-end;}
+.rec{background:#fff; color:#000; align-self:flex-start;}
+.header{display:flex; align-items:center; margin-bottom:10px; font-size:1.3em;}
+.header img{width:60px; height:60px; border-radius:50%; margin-right:15px;}
+.callStatus{margin:10px 0; color:#0f0; font-size:1.5em;}
+.chat-controls{display:flex; gap:5px;}
+.chat-controls input{flex:1; font-size:1.2em; padding:12px;}
+.fullScreenCall{position:fixed; top:0; left:0; width:100%; height:100%; background:#000; color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999;}
+.fullScreenCall button{margin:10px; padding:15px; font-size:1.3em; border-radius:10px; background:#25D366; color:#000; border:none; cursor:pointer;}
+.fullScreenCall audio{margin-top:20px;}
+</style>
+<script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 <div class="container">
 
   <div id="loginArea">
-    <h3>Login with your number</h3>
+    <h2>Login with your number</h2>
     <input type="text" id="numberInput" placeholder="Enter your number"/>
     <button id="sendCodeBtn">Send Code</button>
     <div id="codeArea" class="hidden">
@@ -49,19 +52,29 @@
       <input type="text" id="messageInput" placeholder="Type message..."/>
       <button id="sendBtn">Send</button>
       <button id="recordBtn">🎤</button>
-      <button id="callBtn">📞</button>
+      <button id="callBtn">📞 Call</button>
     </div>
     <div id="callStatus" class="callStatus hidden"></div>
   </div>
 
 </div>
 
+<!-- Fullscreen Call Overlay -->
+<div id="fullCallScreen" class="fullScreenCall hidden">
+  <h1 id="callFrom">Incoming Call</h1>
+  <button id="answerCallBtn">Answer</button>
+  <button id="declineCallBtn">Decline</button>
+  <button id="hangupBtn" class="hidden">Hang Up</button>
+  <button id="muteBtn" class="hidden">Mute</button>
+  <audio id="callAudio" autoplay></audio>
+</div>
+
 <script>
 const socket = io();
 const allowedNumbers = ['13058962443','18573917861'];
 const profiles = {
-  "13058962443": {name:"My Wife", photo:"https://via.placeholder.com/40x40?text=W"},
-  "18573917861": {name:"Me", photo:"https://via.placeholder.com/40x40?text=Me"}
+  "13058962443": {name:"My Wife", photo:"https://via.placeholder.com/60x60?text=W"},
+  "18573917861": {name:"Me", photo:"https://via.placeholder.com/60x60?text=Me"}
 };
 let myNumber = null;
 let verificationCode = null;
@@ -85,7 +98,15 @@ const callBtn = document.getElementById('callBtn');
 const callStatus = document.getElementById('callStatus');
 const recordBtn = document.getElementById('recordBtn');
 
-// Step1: send code
+const fullCallScreen = document.getElementById('fullCallScreen');
+const callFrom = document.getElementById('callFrom');
+const answerCallBtn = document.getElementById('answerCallBtn');
+const declineCallBtn = document.getElementById('declineCallBtn');
+const hangupBtn = document.getElementById('hangupBtn');
+const muteBtn = document.getElementById('muteBtn');
+const callAudio = document.getElementById('callAudio');
+
+// Login & verification
 sendCodeBtn.onclick = ()=>{
   const num = numberInput.value.trim();
   if(!allowedNumbers.includes(num)) return alert("Number not allowed!");
@@ -96,7 +117,6 @@ sendCodeBtn.onclick = ()=>{
   codeArea.classList.remove('hidden');
 }
 
-// Step2: verify code
 verifyBtn.onclick = ()=>{
   if(codeInput.value.trim()==verificationCode){
     loginStatus.textContent="Verified! Access granted.";
@@ -105,10 +125,10 @@ verifyBtn.onclick = ()=>{
     profileImg.src = profiles[otherNumber].photo;
     profileName.textContent = profiles[otherNumber].name;
     socket.emit('join', myNumber);
-  }else{ alert("Incorrect code!"); }
+  } else alert("Incorrect code!");
 }
 
-// Step3: send message
+// Text message
 sendBtn.onclick = ()=>{
   const txt = messageInput.value.trim();
   if(!txt) return;
@@ -119,27 +139,16 @@ sendBtn.onclick = ()=>{
 
 messageInput.addEventListener('keydown',(e)=>{if(e.key==='Enter')sendBtn.click();});
 
-// Receive text messages
+// Receive text
 socket.on('message', msg=>{
   const div = document.createElement('div');
   div.className='bubble '+(msg.from===myNumber?'sent':'rec');
-  div.innerHTML=`<div>${msg.text}</div><div style="font-size:10px;color:#aaa">${msg.from} • ${msg.time}</div>`;
+  div.innerHTML=`<div>${msg.text}</div><div style="font-size:12px;color:#aaa">${msg.from} • ${msg.time}</div>`;
   chatBox.appendChild(div);
   chatBox.scrollTop=chatBox.scrollHeight;
 });
 
-// Load previous messages
-socket.on('loadMessages', msgs=>{
-  msgs.forEach(msg=>{
-    const div = document.createElement('div');
-    div.className='bubble '+(msg.from===myNumber?'sent':'rec');
-    div.innerHTML=`<div>${msg.text}</div><div style="font-size:10px;color:#aaa">${msg.from} • ${msg.time}</div>`;
-    chatBox.appendChild(div);
-  });
-  chatBox.scrollTop=chatBox.scrollHeight;
-});
-
-// Voice recording
+// Voice
 let mediaRecorder;
 let audioChunks = [];
 recordBtn.onclick = async ()=>{
@@ -164,7 +173,6 @@ recordBtn.onclick = async ()=>{
   }
 };
 
-// Receive voice
 socket.on('voice', msg=>{
   const audio = document.createElement('audio');
   audio.controls = true;
@@ -178,36 +186,43 @@ socket.on('voice', msg=>{
 
 // Call
 callBtn.onclick = ()=>{
-  callStatus.classList.remove('hidden');
-  callStatus.textContent="Calling...";
+  fullCallScreen.classList.remove('hidden');
+  callFrom.textContent="Calling "+profiles[otherNumber].name;
+  hangupBtn.classList.remove('hidden');
+  muteBtn.classList.remove('hidden');
   socket.emit('call', {to:otherNumber});
-};
+}
 
 // Incoming call
 socket.on('incomingCall', data=>{
-  callStatus.classList.remove('hidden');
-  callStatus.innerHTML=`Incoming call from ${data.from}<br>
-    <button onclick="answerCall()">Answer</button>
-    <button onclick="declineCall()">Decline</button>`;
+  fullCallScreen.classList.remove('hidden');
+  callFrom.textContent="Incoming Call from "+profiles[otherNumber].name;
+  answerCallBtn.classList.remove('hidden');
+  declineCallBtn.classList.remove('hidden');
 });
 
 // Answer / Decline
-function answerCall(){
-  callStatus.textContent="Call connected";
+answerCallBtn.onclick = ()=>{
   socket.emit('answerCall', {to:otherNumber});
-}
-function declineCall(){
-  callStatus.textContent="Call declined";
+  callFrom.textContent="Call connected with "+profiles[otherNumber].name;
+  answerCallBtn.classList.add('hidden');
+  declineCallBtn.classList.add('hidden');
+  hangupBtn.classList.remove('hidden');
+  muteBtn.classList.remove('hidden');
+};
+declineCallBtn.onclick = ()=>{
   socket.emit('declineCall', {to:otherNumber});
-  setTimeout(()=> callStatus.classList.add('hidden'),2000);
-}
+  fullCallScreen.classList.add('hidden');
+};
+hangupBtn.onclick = ()=> fullCallScreen.classList.add('hidden');
+muteBtn.onclick = ()=> callAudio.muted = !callAudio.muted;
 
 socket.on('callAnswered', data=>{
-  callStatus.textContent="Call connected with "+data.from;
+  callFrom.textContent="Call connected with "+profiles[otherNumber].name;
 });
 socket.on('callDeclined', data=>{
-  callStatus.textContent="Call declined by "+data.from;
-  setTimeout(()=> callStatus.classList.add('hidden'),2000);
+  callFrom.textContent="Call declined by "+profiles[otherNumber].name;
+  setTimeout(()=> fullCallScreen.classList.add('hidden'),1500);
 });
 </script>
 </body>
