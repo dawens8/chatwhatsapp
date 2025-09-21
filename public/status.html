@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Status</title>
+</head>
+<body>
+  <h2>📸 DawenSapp Status</h2>
+  <input type="file" id="upload"/>
+  <div id="statusList"></div>
+
+  <script>
+    const upload=document.getElementById("upload");
+    const list=document.getElementById("statusList");
+
+    upload.onchange = ()=>{
+      const file=upload.files[0];
+      const url=URL.createObjectURL(file);
+      const el=file.type.startsWith("video")?document.createElement("video"):document.createElement("img");
+      if(file.type.startsWith("video")) el.controls=true;
+      el.src=url; el.style.maxWidth="200px";
+      list.appendChild(el);
+    };
+  </script>
+</body>
+</html>
