@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DawenSapp Support</title>
+</head>
+<body>
+  <h2>🤖 DawenSapp Support AI</h2>
+  <div id="chat"></div>
+  <input type="text" id="q" placeholder="Ask me anything..."/>
+  <button id="send">Send</button>
+
+  <script>
+    const chat=document.getElementById("chat");
+    const q=document.getElementById("q");
+    const send=document.getElementById("send");
+
+    send.onclick = async ()=>{
+      const txt=q.value;
+      q.value="";
+      addMsg("You",txt);
+      const res=await fetch("https://api.openai.com/v1/chat/completions",{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "Authorization":"Bearer YOUR_OPENAI_KEY"
+        },
+        body:JSON.stringify({model:"gpt-3.5-turbo",messages:[{role:"user",content:txt}]})
+      });
+      const data=await res.json();
+      const reply=data.choices[0].message.content;
+      addMsg("Support",reply+"\n\nIf you need real help: 📞 13058962443 | 📧 berryxoe@gmail.com");
+    };
+
+    function addMsg(sender,text){
+      const div=document.createElement("div");
+      div.textContent=`${sender}: ${text}`;
+      chat.appendChild(div);
+    }
+  </script>
+</body>
+</html>
