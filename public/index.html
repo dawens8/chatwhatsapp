@@ -19,6 +19,7 @@ input,button{padding:12px;margin:5px 0;border-radius:8px;border:none;font-size:1
 .chat-controls{display:flex;gap:10px;flex-wrap:wrap;}
 .chat-controls input{flex:1;}
 button{cursor:pointer;font-weight:bold;}
+#optionsMenu{margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;}
 </style>
 <script src="/socket.io/socket.io.js"></script>
 </head>
@@ -56,6 +57,14 @@ button{cursor:pointer;font-weight:bold;}
     <button id="muteBtn">🔇 Mute</button>
     <button id="speakerBtn">🔊 Speaker</button>
   </div>
+
+  <div id="optionsMenu">
+    <input type="file" id="uploadPhoto" accept="image/*"/>
+    <button id="deleteAllBtn">🗑 Delete All</button>
+    <button id="blockBtn">🚫 Block</button>
+    <button id="reportBtn">⚠️ Report</button>
+  </div>
+
   <div id="callStatus" class="callStatus hidden"></div>
 </div>
 
@@ -70,8 +79,20 @@ const profiles = {
 };
 let myNumber = null, verificationCode = null, otherNumber = null;
 let inCall = false, muted=false, speaker=false;
+let blocked = false;
+let reports = JSON.parse(localStorage.getItem("reports") || "{}");
 
-// DOM
+// --- AUDIO ---
+const textTone = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+const ringTone = new Audio("https://actions.google.com/sounds/v1/alarms/phone_alerts_and_rings.ogg");
+ringTone.loop = true;
+
+// --- STORAGE KEYS ---
+const STORAGE_KEY = "chatAppSession";
+const PIN_KEY = "chatAppPIN";
+const MSG_KEY = "chatAppMessages";
+
+// --- DOM ---
 const loginArea=document.getElementById('loginArea');
 const codeArea=document.getElementById('codeArea');
 const loginStatus=document.getElementById('loginStatus');
@@ -93,91 +114,170 @@ const endCallBtn=document.getElementById('endCallBtn');
 const muteBtn=document.getElementById('muteBtn');
 const speakerBtn=document.getElementById('speakerBtn');
 
-// Step1: send code
+const uploadPhoto=document.getElementById('uploadPhoto');
+const deleteAllBtn=document.getElementById('deleteAllBtn');
+const blockBtn=document.getElementById('blockBtn');
+const reportBtn=document.getElementById('reportBtn');
+
+// --- UTILS ---
+function saveSession(number){
+  const session = {number, verifiedAt: Date.now()};
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+}
+function loadSession(){
+  const session = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+  if(session && (Date.now() - session.verifiedAt < 432000000)){ // 5 days
+    return session;
+  }
+  return null;
+}
+function checkPIN(){
+  const pin = localStorage.getItem(PIN_KEY);
+  if(pin){
+    const input = prompt("Enter your PIN:");
+    if(input !== pin){ alert("Incorrect PIN!"); return false; }
+  } else {
+    const newPin = prompt("Set a new PIN:");
+    if(newPin) localStorage.setItem(PIN_KEY, newPin);
+  }
+  return true;
+}
+function saveMessages(msgs){
+  localStorage.setItem(MSG_KEY, JSON.stringify(msgs));
+}
+function loadMessages(){
+  return JSON.parse(localStorage.getItem(MSG_KEY) || "[]");
+}
+function renderMessages(){
+  chatBox.innerHTML="";
+  const msgs=loadMessages();
+  msgs.forEach(msg=>{
+    const div=document.createElement('div');
+    div.className='bubble '+(msg.from===myNumber?'sent':'rec');
+    div.innerHTML=`<div>${msg.text}</div><div style="font-size:12px;color:#aaa">${msg.from} • ${msg.time}</div>`;
+    chatBox.appendChild(div);
+  });
+  chatBox.scrollTop=chatBox.scrollHeight;
+}
+
+// --- LOGIN FLOW ---
 sendCodeBtn.onclick = ()=>{
   const num=numberInput.value.trim();
   if(!allowedNumbers.includes(num)) return alert("Number not allowed!");
+  if(reports[num] && reports[num].count>=7 && Date.now()-reports[num].last<86400000){
+    return alert("This number is banned for 24h due to multiple reports.");
+  }
   myNumber=num;
   otherNumber=allowedNumbers.find(n=>n!==myNumber);
   verificationCode=Math.floor(1000+Math.random()*9000);
   alert("Your verification code: "+verificationCode);
   codeArea.classList.remove('hidden');
-}
+};
 
-// Step2: verify code
 verifyBtn.onclick = ()=>{
   if(codeInput.value.trim()==verificationCode){
+    if(!checkPIN()) return;
     loginStatus.textContent="Verified! Access granted.";
+    saveSession(myNumber);
     loginArea.classList.add('hidden');
     chatArea.classList.remove('hidden');
     profileImg.src=profiles[otherNumber].photo;
     profileName.textContent=profiles[otherNumber].name;
+    renderMessages();
     socket.emit('join', myNumber);
   }else{ alert("Incorrect code!"); }
-}
-
-// Send text
-sendBtn.onclick = ()=>{
-  const txt=messageInput.value.trim();
-  if(!txt) return;
-  const msg={to:otherNumber,text:txt};
-  socket.emit('message',msg);
-  messageInput.value='';
-}
-
-// Enter key
-messageInput.addEventListener('keydown',(e)=>{if(e.key==='Enter')sendBtn.click();});
-
-// Receive text
-socket.on('message', msg=>{
-  const div=document.createElement('div');
-  div.className='bubble '+(msg.from===myNumber?'sent':'rec');
-  div.innerHTML=`<div>${msg.text}</div><div style="font-size:12px;color:#aaa">${msg.from} • ${msg.time}</div>`;
-  chatBox.appendChild(div);
-  chatBox.scrollTop=chatBox.scrollHeight;
-});
-
-// Voice
-let mediaRecorder,audioChunks=[];
-recordBtn.onclick = async ()=>{
-  if(!mediaRecorder || mediaRecorder.state==="inactive"){
-    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    mediaRecorder=new MediaRecorder(stream);
-    mediaRecorder.ondataavailable=e=>audioChunks.push(e.data);
-    mediaRecorder.onstop=()=>{
-      const blob=new Blob(audioChunks,{type:'audio/webm'});
-      audioChunks=[];
-      const reader=new FileReader();
-      reader.onloadend=()=>socket.emit('voice',{to:otherNumber,audio:reader.result});
-      reader.readAsDataURL(blob);
-    };
-    mediaRecorder.start();
-    recordBtn.textContent="⏹";
-  } else {
-    mediaRecorder.stop();
-    recordBtn.textContent="🎤";
-  }
 };
 
-socket.on('voice', msg=>{
-  const audio=document.createElement('audio');
-  audio.controls=true;
-  audio.src=msg.audio;
-  const div=document.createElement('div');
-  div.className='bubble '+(msg.from===myNumber?'sent':'rec');
-  div.appendChild(audio);
-  chatBox.appendChild(div);
-  chatBox.scrollTop=chatBox.scrollHeight;
+// Auto-login
+window.onload = ()=>{
+  const session=loadSession();
+  if(session && checkPIN()){
+    if(reports[session.number] && reports[session.number].count>=7 && Date.now()-reports[session.number].last<86400000){
+      alert("This number is banned for 24h due to multiple reports."); 
+      localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+    myNumber=session.number;
+    otherNumber=allowedNumbers.find(n=>n!==myNumber);
+    loginArea.classList.add('hidden');
+    chatArea.classList.remove('hidden');
+    profileImg.src=profiles[otherNumber].photo;
+    profileName.textContent=profiles[otherNumber].name;
+    renderMessages();
+    socket.emit('join', myNumber);
+  }
+  if(Notification.permission!=="granted"){ Notification.requestPermission(); }
+};
+
+// --- MESSAGING ---
+sendBtn.onclick = ()=>{
+  if(blocked){ return alert("You blocked this number."); }
+  const txt=messageInput.value.trim();
+  if(!txt) return;
+  const msg={from:myNumber,to:otherNumber,text:txt,time:new Date().toLocaleTimeString()};
+  const msgs=loadMessages();
+  msgs.push(msg);
+  saveMessages(msgs);
+  renderMessages();
+  socket.emit('message',msg);
+  messageInput.value='';
+};
+messageInput.addEventListener('keydown',(e)=>{if(e.key==='Enter')sendBtn.click();});
+
+socket.on('message', msg=>{
+  if(blocked) return;
+  const msgs=loadMessages();
+  msgs.push(msg);
+  saveMessages(msgs);
+  renderMessages();
+  if(msg.from!==myNumber){
+    textTone.play();
+    if(Notification.permission==="granted"){
+      new Notification("New Message",{body:msg.text,icon:profiles[msg.from]?.photo});
+    }
+  }
 });
 
-// Call buttons
+// --- OPTIONS ---
+uploadPhoto.onchange = (e)=>{
+  const file = e.target.files[0];
+  if(file){
+    const reader=new FileReader();
+    reader.onload=()=>{
+      profiles[myNumber].photo=reader.result;
+      profileImg.src=reader.result;
+      alert("Profile photo updated!");
+    };
+    reader.readAsDataURL(file);
+  }
+};
+deleteAllBtn.onclick = ()=>{
+  if(confirm("Delete all your local messages?")){
+    saveMessages([]);
+    renderMessages();
+  }
+};
+blockBtn.onclick = ()=>{
+  blocked=!blocked;
+  blockBtn.textContent = blocked?"✅ Unblock":"🚫 Block";
+  alert(blocked?"You blocked this number.":"You unblocked this number.");
+};
+reportBtn.onclick = ()=>{
+  if(!reports[otherNumber]) reports[otherNumber]={count:0,last:0};
+  reports[otherNumber].count++;
+  reports[otherNumber].last=Date.now();
+  localStorage.setItem("reports", JSON.stringify(reports));
+  alert("Report submitted. Total reports: "+reports[otherNumber].count);
+};
+
+// --- CALLS ---
 callBtn.onclick = ()=>{
   if(inCall){ alert("Already in call"); return;}
+  if(blocked){ return alert("You blocked this number."); }
   callStatus.classList.remove('hidden');
   callStatus.textContent="Calling...";
   socket.emit('call',{to:otherNumber});
 };
-
 endCallBtn.onclick = ()=>{
   if(!inCall) return;
   inCall=false;
@@ -185,43 +285,38 @@ endCallBtn.onclick = ()=>{
   socket.emit('declineCall',{to:otherNumber});
   setTimeout(()=> callStatus.classList.add('hidden'),2000);
 };
+muteBtn.onclick = ()=>{muted=!muted;muteBtn.textContent=muted?"🔈 Unmute":"🔇 Mute";};
+speakerBtn.onclick = ()=>{speaker=!speaker;speakerBtn.textContent=speaker?"📢 Normal":"🔊 Speaker";};
 
-muteBtn.onclick = ()=>{
-  muted=!muted;
-  muteBtn.textContent = muted?"🔈 Unmute":"🔇 Mute";
-};
-
-speakerBtn.onclick = ()=>{
-  speaker=!speaker;
-  speakerBtn.textContent = speaker?"📢 Normal":"🔊 Speaker";
-};
-
-// Incoming call
 socket.on('incomingCall', data=>{
+  if(blocked) return;
+  ringTone.play();
+  if(Notification.permission==="granted"){
+    new Notification("Incoming Call",{body:`From ${data.from}`,icon:profiles[data.from]?.photo});
+  }
   callStatus.classList.remove('hidden');
   callStatus.innerHTML=`Incoming call from ${data.from}<br>
     <button onclick="answerCall()">Answer</button>
     <button onclick="declineCall()">Decline</button>`;
 });
-
 function answerCall(){
   inCall=true;
+  ringTone.pause(); ringTone.currentTime=0;
   callStatus.textContent="Call connected";
   socket.emit('answerCall',{to:otherNumber});
 }
-
 function declineCall(){
+  ringTone.pause(); ringTone.currentTime=0;
   callStatus.textContent="Call declined";
   socket.emit('declineCall',{to:otherNumber});
   setTimeout(()=> callStatus.classList.add('hidden'),2000);
 }
-
 socket.on('callAnswered', data=>{
   inCall=true;
   callStatus.textContent="Call connected with "+data.from;
 });
-
 socket.on('callDeclined', data=>{
+  ringTone.pause(); ringTone.currentTime=0;
   callStatus.textContent="Call declined by "+data.from;
   setTimeout(()=> callStatus.classList.add('hidden'),2000);
 });
