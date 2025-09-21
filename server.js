@@ -1,117 +1,101 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const path = require("path");
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, { cors:{ origin: "*" } });
 
-// Serve static files (frontend)
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, 'public')));
 
-let users = {};       // { number: socket.id }
-let reports = {};     // { number: count }
-let blocked = {};     // { blocker: [blockedNumbers] }
+// In-memory stores (for demo). You may persist to DB.
+let users = {};            // number -> socket.id
+let blocked = {};          // number -> [blockedNumbers]
+let reports = {};          // number -> {count,last}
+let callHistories = {};    // number -> [ {with,type,start,end,durationMs} ]
 
-// --- SOCKET.IO HANDLERS ---
-io.on("connection", (socket) => {
-  console.log("New connection:", socket.id);
+io.on('connection', socket=>{
+  console.log('conn', socket.id);
 
-  // Join user
-  socket.on("join", (number) => {
-    users[number] = socket.id;
+  socket.on('join', (number)=>{
     socket.number = number;
-    console.log(`${number} joined.`);
+    users[number] = socket.id;
+    console.log(`${number} joined as ${socket.id}`);
   });
 
-  // Send text
-  socket.on("message", (msg) => {
-    if (blocked[msg.to]?.includes(socket.number)) {
-      console.log("Message blocked by recipient.");
-      return;
-    }
-    const target = users[msg.to];
-    if (target) {
-      io.to(target).emit("message", {
-        from: socket.number,
-        text: msg.text,
-        time: new Date().toLocaleTimeString(),
-      });
-    }
-  });
-
-  // Send voice
-  socket.on("voice", (msg) => {
-    const target = users[msg.to];
-    if (target) {
-      io.to(target).emit("voice", {
-        from: socket.number,
-        audio: msg.audio,
-      });
-    }
-  });
-
-  // Call events
-  socket.on("call", (data) => {
-    const target = users[data.to];
-    if (target) {
-      io.to(target).emit("incomingCall", { from: socket.number });
-    }
-  });
-
-  socket.on("answerCall", (data) => {
-    const target = users[data.to];
-    if (target) io.to(target).emit("callAnswered", { from: socket.number });
-  });
-
-  socket.on("declineCall", (data) => {
-    const target = users[data.to];
-    if (target) io.to(target).emit("callDeclined", { from: socket.number });
-  });
-
-  // Block / Unblock
-  socket.on("block", (num) => {
-    if (!blocked[socket.number]) blocked[socket.number] = [];
-    if (!blocked[socket.number].includes(num)) {
-      blocked[socket.number].push(num);
-    }
-    socket.emit("blockedList", blocked[socket.number]);
-  });
-
-  socket.on("unblock", (num) => {
-    if (blocked[socket.number]) {
-      blocked[socket.number] = blocked[socket.number].filter((n) => n !== num);
-    }
-    socket.emit("blockedList", blocked[socket.number]);
-  });
-
-  // Report system
-  socket.on("report", (num) => {
-    if (!reports[num]) reports[num] = 0;
-    reports[num]++;
-
-    if (reports[num] >= 7) {
-      const target = users[num];
-      if (target) {
-        io.to(target).emit("banned", {
-          reason: "Too many reports",
-          duration: "24h",
-        });
-        io.sockets.sockets.get(target)?.disconnect();
+  socket.on('message', (msg)=>{
+    const targetId = users[msg.to];
+    if(targetId){
+      // check block
+      if(blocked[msg.to] && blocked[msg.to].includes(socket.number)) {
+        return; // recipient blocked sender
       }
+      io.to(targetId).emit('message', { from: socket.number, text: msg.text, time: msg.time });
     }
   });
 
-  // Disconnect
-  socket.on("disconnect", () => {
-    console.log(`${socket.number} disconnected`);
-    delete users[socket.number];
+  // WebRTC signaling
+  socket.on('webrtc-offer', (data)=>{
+    const toId = users[data.to];
+    if(toId) io.to(toId).emit('webrtc-offer', { from: socket.number, offer: data.offer });
+  });
+  socket.on('webrtc-answer', (data)=>{
+    const toId = users[data.to];
+    if(toId) io.to(toId).emit('webrtc-answer', { from: socket.number, answer: data.answer });
+  });
+  socket.on('webrtc-ice', (data)=>{
+    const toId = users[data.to];
+    if(toId) io.to(toId).emit('webrtc-ice', { from: socket.number, candidate: data.candidate });
+  });
+
+  // end call notify
+  socket.on('endCall', (data)=>{
+    const toId = users[data.to];
+    if(toId) io.to(toId).emit('endCall', { from: socket.number });
+  });
+
+  // called by client to persist call record
+  socket.on('callEndedRecord', (rec)=>{
+    // save for both participants
+    const recObj = { with: rec.with, type: rec.type, start: rec.start, end: rec.end, durationMs: rec.end - rec.start };
+    if(!callHistories[socket.number]) callHistories[socket.number] = [];
+    callHistories[socket.number].push(Object.assign({peer: rec.with}, recObj));
+    // also save for the other side if present
+    if(!callHistories[rec.with]) callHistories[rec.with] = [];
+    callHistories[rec.with].push(Object.assign({peer: socket.number}, recObj));
+    io.to(socket.id).emit('callEndedRecordAck');
+  });
+
+  // block/unblock/report endpoints via socket if needed (not used in this demo)
+  socket.on('block', (num)=>{
+    if(!blocked[socket.number]) blocked[socket.number] = [];
+    if(!blocked[socket.number].includes(num)) blocked[socket.number].push(num);
+    socket.emit('blockedList', blocked[socket.number]);
+  });
+  socket.on('report', (num)=>{
+    if(!reports[num]) reports[num] = {count:0,last:0};
+    reports[num].count++;
+    reports[num].last = Date.now();
+    if(reports[num].count >= 7){
+      const sid = users[num];
+      if(sid) io.to(sid).emit('banned', { reason: 'Too many reports', duration: '24h' });
+      // optionally disconnect
+      if(users[num]) io.sockets.sockets.get(users[num])?.disconnect();
+    }
+  });
+
+  socket.on('disconnect', ()=>{
+    if(socket.number && users[socket.number] === socket.id) delete users[socket.number];
+    console.log('disconnect', socket.number);
   });
 });
 
-// Render use process.env.PORT
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log("Server running on port", PORT);
+// expose a simple endpoint to inspect call histories (DEV only)
+app.get('/debug/callhist/:number', (req,res)=>{
+  const num = req.params.number;
+  res.json({ number: num, calls: callHistories[num] || [] });
 });
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, ()=> console.log('Server listening on', PORT));
