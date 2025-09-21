@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Call History</title>
+</head>
+<body>
+  <h2>📞 Call History</h2>
+  <ul id="historyList"></ul>
+
+  <script>
+    const history = JSON.parse(localStorage.getItem("callHistory")||"[]");
+    const list = document.getElementById("historyList");
+    history.forEach(h=>{
+      const li=document.createElement("li");
+      li.textContent=`${h.type} with ${h.number} - ${h.duration} at ${h.date}`;
+      list.appendChild(li);
+    });
+  </script>
+</body>
+</html>
