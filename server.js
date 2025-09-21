@@ -9,28 +9,22 @@ const io = new Server(server);
 app.use(express.static("public"));
 
 io.on("connection", socket=>{
-  console.log("User connected");
-
-  socket.on("chatMessage", msg=>{
-    socket.broadcast.emit("chatMessage", msg);
+  socket.on("message", msg=>{
+    socket.broadcast.emit("message", msg);
   });
 
-  socket.on("offer", (offer, type)=>{
-    socket.broadcast.emit("offer", offer, type);
+  socket.on("offer", offer=>{
+    socket.broadcast.emit("offer", offer);
   });
 
-  socket.on("answer", answer=>{
-    socket.broadcast.emit("answer", answer);
+  socket.on("answer", ans=>{
+    socket.broadcast.emit("answer", ans);
   });
 
-  socket.on("ice", candidate=>{
-    socket.broadcast.emit("ice", candidate);
-  });
-
-  socket.on("endCall", ()=>{
-    socket.broadcast.emit("endCall");
+  socket.on("ice", cand=>{
+    socket.broadcast.emit("ice", cand);
   });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, ()=>console.log("Server running on port "+PORT));
+server.listen(PORT, ()=>console.log("Server running on "+PORT));
