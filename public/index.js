@@ -1,146 +1,117 @@
 const socket = io();
+let localStream, peerConnection, remoteStream;
+let callTimer, seconds = 0;
+
+const servers = { iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }] };
+
+const callScreen = document.getElementById("callScreen");
 const chatBox = document.getElementById("chatBox");
 const messageInput = document.getElementById("messageInput");
 const sendBtn = document.getElementById("sendBtn");
 const audioCallBtn = document.getElementById("audioCallBtn");
 const videoCallBtn = document.getElementById("videoCallBtn");
-
-const callScreen = document.getElementById("callScreen");
-const remoteVideo = document.getElementById("remoteVideo");
 const localVideo = document.getElementById("localVideo");
-const muteBtn = document.getElementById("muteBtn");
-const videoBtn = document.getElementById("videoBtn");
-const speakerBtn = document.getElementById("speakerBtn");
-const endCallBtn = document.getElementById("endCallBtn");
-const callTimer = document.getElementById("callTimer");
+const remoteVideo = document.getElementById("remoteVideo");
+const callStatus = document.getElementById("callStatus");
+const callTimerEl = document.getElementById("callTimer");
+const endCallBtn = document.getElementById("endCall");
+const toggleMic = document.getElementById("toggleMic");
+const toggleCam = document.getElementById("toggleCam");
 
-let localStream, peerConnection, callType="audio";
-let callInterval, seconds=0;
-
-function addMessage(text, sender="me") {
-  const div = document.createElement("div");
-  div.className = "bubble " + (sender==="me"?"sent":"rec");
-  div.textContent = text;
-  chatBox.appendChild(div);
-  chatBox.scrollTop = chatBox.scrollHeight;
-}
-
-sendBtn.onclick = () => {
+// Send message
+sendBtn.onclick = ()=>{
   const msg = messageInput.value;
   if(!msg) return;
-  addMessage(msg, "me");
-  socket.emit("chatMessage", msg);
+  socket.emit("message", { text: msg });
+  addMessage("You", msg);
   messageInput.value="";
 };
 
-socket.on("chatMessage", msg=>{
-  addMessage(msg, "other");
+socket.on("message", msg=>{
+  addMessage("Friend", msg.text);
 });
 
-// Call logic
-async function startCall(type="audio") {
-  callType=type;
-  callScreen.style.display="flex";
-  seconds=0;
-  callInterval=setInterval(()=>{
-    seconds++;
-    let m=Math.floor(seconds/60).toString().padStart(2,"0");
-    let s=(seconds%60).toString().padStart(2,"0");
-    callTimer.textContent=`${m}:${s}`;
-  },1000);
-
-  localStream=await navigator.mediaDevices.getUserMedia({
-    video: type==="video", audio:true
-  });
-  localVideo.srcObject=localStream;
-
-  peerConnection=new RTCPeerConnection();
-  localStream.getTracks().forEach(track=>peerConnection.addTrack(track, localStream));
-
-  peerConnection.ontrack = e => {
-    remoteVideo.srcObject = e.streams[0];
-  };
-
-  peerConnection.onicecandidate = e=>{
-    if(e.candidate) socket.emit("ice", e.candidate);
-  };
-
-  const offer=await peerConnection.createOffer();
-  await peerConnection.setLocalDescription(offer);
-  socket.emit("offer", offer, type);
+function addMessage(sender, text){
+  const div=document.createElement("div");
+  div.textContent=`${sender}: ${text}`;
+  chatBox.appendChild(div);
 }
 
-audioCallBtn.onclick = ()=> startCall("audio");
-videoCallBtn.onclick = ()=> startCall("video");
+// Audio call
+audioCallBtn.onclick = ()=> startCall(false);
+videoCallBtn.onclick = ()=> startCall(true);
 
-endCallBtn.onclick = ()=>{
-  callScreen.style.display="none";
-  clearInterval(callInterval);
-  peerConnection.close();
-  localStream.getTracks().forEach(t=>t.stop());
-  socket.emit("endCall");
-};
+async function startCall(isVideo){
+  callScreen.classList.remove("hidden");
+  localStream = await navigator.mediaDevices.getUserMedia({ video:isVideo, audio:true });
+  localVideo.srcObject = localStream;
 
-muteBtn.onclick = ()=>{
-  let enabled=localStream.getAudioTracks()[0].enabled;
-  localStream.getAudioTracks()[0].enabled=!enabled;
-  muteBtn.textContent=enabled?"🔈":"🎤";
-};
+  peerConnection = new RTCPeerConnection(servers);
+  remoteStream = new MediaStream();
+  remoteVideo.srcObject = remoteStream;
 
-videoBtn.onclick = ()=>{
-  if(localStream.getVideoTracks()[0]){
-    let enabled=localStream.getVideoTracks()[0].enabled;
-    localStream.getVideoTracks()[0].enabled=!enabled;
-    videoBtn.textContent=enabled?"📷":"🚫";
-  }
-};
-
-speakerBtn.onclick = ()=>{
-  remoteVideo.muted=!remoteVideo.muted;
-};
-
-// Signaling
-socket.on("offer", async (offer, type)=>{
-  callType=type;
-  callScreen.style.display="flex";
-  seconds=0;
-  callInterval=setInterval(()=>{
-    seconds++;
-    let m=Math.floor(seconds/60).toString().padStart(2,"0");
-    let s=(seconds%60).toString().padStart(2,"0");
-    callTimer.textContent=`${m}:${s}`;
-  },1000);
-
-  localStream=await navigator.mediaDevices.getUserMedia({video:type==="video",audio:true});
-  localVideo.srcObject=localStream;
-
-  peerConnection=new RTCPeerConnection();
   localStream.getTracks().forEach(track=>peerConnection.addTrack(track, localStream));
+  peerConnection.ontrack = e=> e.streams[0].getTracks().forEach(t=>remoteStream.addTrack(t));
 
-  peerConnection.ontrack = e=>{
-    remoteVideo.srcObject=e.streams[0];
-  };
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
+  socket.emit("offer", offer);
+
   peerConnection.onicecandidate = e=>{
     if(e.candidate) socket.emit("ice", e.candidate);
   };
 
+  startTimer();
+}
+
+socket.on("offer", async offer=>{
+  callScreen.classList.remove("hidden");
+  localStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+  localVideo.srcObject = localStream;
+
+  peerConnection = new RTCPeerConnection(servers);
+  remoteStream = new MediaStream();
+  remoteVideo.srcObject = remoteStream;
+
+  localStream.getTracks().forEach(track=>peerConnection.addTrack(track, localStream));
+  peerConnection.ontrack = e=> e.streams[0].getTracks().forEach(t=>remoteStream.addTrack(t));
+
   await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-  const answer=await peerConnection.createAnswer();
+  const answer = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answer);
   socket.emit("answer", answer);
+
+  peerConnection.onicecandidate = e=>{
+    if(e.candidate) socket.emit("ice", e.candidate);
+  };
+
+  startTimer();
 });
 
-socket.on("answer", async answer=>{
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+socket.on("answer", ans=>{
+  peerConnection.setRemoteDescription(new RTCSessionDescription(ans));
 });
 
-socket.on("ice", async candidate=>{
-  try{ await peerConnection.addIceCandidate(candidate); }catch(e){console.error(e);}
+socket.on("ice", cand=>{
+  peerConnection.addIceCandidate(new RTCIceCandidate(cand));
 });
 
-socket.on("endCall", ()=>{
-  callScreen.style.display="none";
-  clearInterval(callInterval);
+// End call
+endCallBtn.onclick = endCall;
+function endCall(){
   if(peerConnection) peerConnection.close();
   if(localStream) localStream.getTracks().forEach(t=>t.stop());
-});
+  callScreen.classList.add("hidden");
+  stopTimer();
+}
+
+function startTimer(){
+  seconds=0;
+  callTimer=setInterval(()=>{
+    seconds++;
+    let m=Math.floor(seconds/60).toString().padStart(2,"0");
+    let s=(seconds%60).toString().padStart(2,"0");
+    callTimerEl.textContent=`${m}:${s}`;
+  },1000);
+}
+function stopTimer(){ clearInterval(callTimer); }
