@@ -1,325 +1,361 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ht">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>2-Number Chat & Call</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>2-Number Chat & Call (Video + History)</title>
+<link rel="stylesheet" href="./style.css" />
 <style>
-html, body{margin:0;padding:0;width:100%;height:100%;font-family:Arial,sans-serif;background:#0c1515;color:white;}
-.container{width:95%;height:95%;margin:auto;background:#1a1f22;padding:20px;border-radius:12px;display:flex;flex-direction:column;}
-.hidden{display:none;}
-input,button{padding:12px;margin:5px 0;border-radius:8px;border:none;font-size:16px;}
-#chatBox{flex:1;background:#111;overflow:auto;padding:15px;border-radius:8px;margin-bottom:10px;display:flex;flex-direction:column;}
-.bubble{padding:12px 16px;border-radius:12px;margin:8px 0;max-width:75%;font-size:18px;line-height:1.4;}
-.sent{background:#25D366;color:#000;align-self:flex-end;}
-.rec{background:#fff;color:#000;align-self:flex-start;}
-.header{display:flex;align-items:center;margin-bottom:15px;}
-.header img{width:60px;height:60px;border-radius:50%;margin-right:15px;}
-.callStatus{margin:10px 0;color:#0f0;font-size:18px;}
-.chat-controls{display:flex;gap:10px;flex-wrap:wrap;}
-.chat-controls input{flex:1;}
-button{cursor:pointer;font-weight:bold;}
-#optionsMenu{margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;}
+/* Senp estil ki imite WhatsApp-like view */
+:root{--bg:#f2efe9;--accent:#25D366;--dark:#0c1515}
+html,body{height:100%;margin:0;font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;color:#111;}
+.app{height:100%;display:flex;flex-direction:column;background:var(--bg) center/cover no-repeat;}
+.topbar{background:linear-gradient(180deg,#0b0f0f, #172025);color:#fff;padding:8px 12px;display:flex;align-items:center;gap:12px;}
+.topbar .callpill{background:rgba(255,255,255,0.08);padding:6px 10px;border-radius:18px;display:flex;align-items:center;gap:8px;}
+.topbar .callpill .dot{width:8px;height:8px;border-radius:50%;background:#00ff6a;box-shadow:0 0 8px #00ff6a;}
+.headerRow{display:flex;align-items:center;gap:10px}
+.headerRow img{width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,0.12)}
+.headerRow .name{font-weight:600}
+.container{flex:1;display:flex;flex-direction:row;}
+
+/* Chat column */
+.chatcol{flex:1;display:flex;flex-direction:column;height:calc(100vh - 120px);background:transparent;padding:12px;overflow:hidden}
+.chat-area{flex:1;overflow:auto;padding:18px;border-radius:12px;background:rgba(255,255,255,0.6);backdrop-filter:blur(4px);}
+.bubble{max-width:70%;padding:10px 14px;border-radius:18px;margin:10px 0;font-size:15px;line-height:1.3}
+.sent{align-self:flex-end;background:var(--accent);color:#000;}
+.rec{align-self:flex-start;background:#fff;color:#000;}
+.inputRow{display:flex;gap:8px;padding:10px 6px;align-items:center}
+.inputRow input{flex:1;padding:10px;border-radius:20px;border:1px solid #ccc;font-size:16px}
+
+/* Right column: video + options */
+.sidecol{width:340px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.preview{height:220px;background:#000;border-radius:10px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+.preview video{width:100%;height:100%;object-fit:cover}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.small{font-size:13px;padding:8px;border-radius:8px;border:none;cursor:pointer}
+.iconBtn{background:#fff;padding:8px;border-radius:8px}
+
+/* history list */
+.history{background:rgba(255,255,255,0.9);padding:8px;border-radius:8px;max-height:220px;overflow:auto}
+.history .item{padding:6px;border-bottom:1px solid #eee;font-size:14px}
+
+/* file input hidden style */
+#bgInput{display:none}
+.bgThumb{height:40px;width:40px;border-radius:6px;object-fit:cover;border:1px solid #ddd}
+
+/* responsive */
+@media(max-width:900px){.sidecol{display:none}}
 </style>
-<script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-<div class="container">
+<div class="app" id="app">
+  <div class="topbar">
+    <div class="callpill" id="callBanner" style="display:none">
+      <div class="dot"></div>
+      <div id="callBannerText">Voice call — In call • Tap to return</div>
+    </div>
+    <div style="flex:1;display:flex;align-items:center;gap:12px" id="headerMain">
+      <div class="headerRow">
+        <img id="cProfile" src="https://via.placeholder.com/80x80?text=P" alt="profile"/>
+        <div>
+          <div class="name" id="cName">Mi…</div>
+          <div style="font-size:13px;color:#9ad8a4" id="cStatus">online</div>
+        </div>
+      </div>
+    </div>
 
-<div id="loginArea">
-  <h2>Login with your number</h2>
-  <input type="text" id="numberInput" placeholder="Enter your number"/>
-  <button id="sendCodeBtn">Send Code</button>
-  <div id="codeArea" class="hidden">
-    <input type="text" id="codeInput" placeholder="Enter code"/>
-    <button id="verifyBtn">Verify</button>
-  </div>
-  <div id="loginStatus"></div>
-</div>
-
-<div id="chatArea" class="hidden">
-  <div class="header">
-    <img id="profileImg" src="" alt="Profile"/>
-    <div>
-      <div id="profileName" style="font-size:22px;font-weight:bold;"></div>
-      <small style="font-size:16px;">Online</small>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button id="videoCallBtn" class="small iconBtn">📹</button>
+      <button id="voiceCallBtn" class="small iconBtn">📞</button>
+      <label for="bgInput" style="cursor:pointer" title="Change background">
+        <img id="bgThumb" class="bgThumb" src="https://via.placeholder.com/40x40?text=BG"/>
+      </label>
+      <input id="bgInput" type="file" accept="image/*"/>
     </div>
   </div>
 
-  <div id="chatBox"></div>
+  <div class="container">
+    <div class="chatcol">
+      <div id="chatArea" class="chat-area"></div>
 
-  <div class="chat-controls">
-    <input type="text" id="messageInput" placeholder="Type message..."/>
-    <button id="sendBtn">Send</button>
-    <button id="recordBtn">🎤</button>
-    <button id="callBtn">📞 Call</button>
-    <button id="endCallBtn">❌ End</button>
-    <button id="muteBtn">🔇 Mute</button>
-    <button id="speakerBtn">🔊 Speaker</button>
+      <div class="inputRow">
+        <input id="messageInput" placeholder="Type message..."/>
+        <button id="sendBtn" class="small">Send</button>
+        <button id="attachBtn" class="small">📎</button>
+      </div>
+    </div>
+
+    <div class="sidecol">
+      <div class="preview" id="preview">
+        <div id="noVideoLabel" style="color:#fff">No active video</div>
+        <video id="remoteVideo" autoplay playsinline style="display:none"></video>
+        <video id="localVideo" autoplay muted playsinline style="width:120px;height:90px;position:absolute;right:8px;bottom:8px;border-radius:8px;display:none"></video>
+      </div>
+
+      <div class="controls">
+        <button id="toggleCamBtn" class="small">Toggle Camera</button>
+        <button id="toggleCamVisBtn" class="small">Hide Self</button>
+        <button id="endCallLocalBtn" class="small">End Call</button>
+      </div>
+
+      <div>
+        <strong>Call history</strong>
+        <div class="history" id="historyList"></div>
+      </div>
+    </div>
   </div>
-
-  <div id="optionsMenu">
-    <input type="file" id="uploadPhoto" accept="image/*"/>
-    <button id="deleteAllBtn">🗑 Delete All</button>
-    <button id="blockBtn">🚫 Block</button>
-    <button id="reportBtn">⚠️ Report</button>
-  </div>
-
-  <div id="callStatus" class="callStatus hidden"></div>
 </div>
 
-</div>
-
+<script src="/socket.io/socket.io.js"></script>
 <script>
+/**
+ * Frontend JS: WebRTC signaling + UI + background + history
+ * - Make sure server implements corresponding socket events.
+ */
+
+/* --- Setup --- */
 const socket = io();
-const allowedNumbers = ['13058962443','18573917861'];
-const profiles = {
-  "13058962443": {name:"My Wife", photo:"https://via.placeholder.com/60x60?text=W"},
-  "18573917861": {name:"Me", photo:"https://via.placeholder.com/60x60?text=Me"}
-};
-let myNumber = null, verificationCode = null, otherNumber = null;
-let inCall = false, muted=false, speaker=false;
-let blocked = false;
-let reports = JSON.parse(localStorage.getItem("reports") || "{}");
+const allowedNumbers = ['13058962443','18573917861']; // same as server
+let myNumber = null, otherNumber = allowedNumbers[1];
+let peerConnection = null;
+let localStream = null;
+let inCall = false;
+let isVideoCall = false;
+let usingFrontCamera = true;
+let selfHidden = false;
 
-// --- AUDIO ---
-const textTone = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
-const ringTone = new Audio("https://actions.google.com/sounds/v1/alarms/phone_alerts_and_rings.ogg");
-ringTone.loop = true;
+const chatArea = document.getElementById('chatArea');
+const messageInput = document.getElementById('messageInput');
+const sendBtn = document.getElementById('sendBtn');
+const bgInput = document.getElementById('bgInput');
+const bgThumb = document.getElementById('bgThumb');
+const videoCallBtn = document.getElementById('videoCallBtn');
+const voiceCallBtn = document.getElementById('voiceCallBtn');
+const remoteVideo = document.getElementById('remoteVideo');
+const localVideo = document.getElementById('localVideo');
+const noVideoLabel = document.getElementById('noVideoLabel');
+const toggleCamBtn = document.getElementById('toggleCamBtn');
+const toggleCamVisBtn = document.getElementById('toggleCamVisBtn');
+const endCallLocalBtn = document.getElementById('endCallLocalBtn');
+const historyList = document.getElementById('historyList');
+const callBanner = document.getElementById('callBanner');
+const callBannerText = document.getElementById('callBannerText');
+const cProfile = document.getElementById('cProfile');
+const cName = document.getElementById('cName');
 
-// --- STORAGE KEYS ---
+/* storage keys */
+const MSG_KEY = "chatAppMessages";
+const CALLS_KEY = "chatAppCallHistory";
 const STORAGE_KEY = "chatAppSession";
 const PIN_KEY = "chatAppPIN";
-const MSG_KEY = "chatAppMessages";
 
-// --- DOM ---
-const loginArea=document.getElementById('loginArea');
-const codeArea=document.getElementById('codeArea');
-const loginStatus=document.getElementById('loginStatus');
-const numberInput=document.getElementById('numberInput');
-const sendCodeBtn=document.getElementById('sendCodeBtn');
-const codeInput=document.getElementById('codeInput');
-const verifyBtn=document.getElementById('verifyBtn');
+/* helper: render messages */
+function loadMessages(){ return JSON.parse(localStorage.getItem(MSG_KEY) || "[]"); }
+function saveMessages(m){ localStorage.setItem(MSG_KEY, JSON.stringify(m)); }
+function renderMessages(){ chatArea.innerHTML=''; const msgs=loadMessages(); msgs.forEach(m=>{ const d=document.createElement('div'); d.className='bubble '+(m.from===myNumber?'sent':'rec'); d.innerHTML=`${m.text}<div style="font-size:12px;color:#666;margin-top:6px">${m.from} • ${m.time}</div>`; chatArea.appendChild(d); }); chatArea.scrollTop=chatArea.scrollHeight; }
 
-const chatArea=document.getElementById('chatArea');
-const chatBox=document.getElementById('chatBox');
-const profileImg=document.getElementById('profileImg');
-const profileName=document.getElementById('profileName');
-const messageInput=document.getElementById('messageInput');
-const sendBtn=document.getElementById('sendBtn');
-const callBtn=document.getElementById('callBtn');
-const callStatus=document.getElementById('callStatus');
-const recordBtn=document.getElementById('recordBtn');
-const endCallBtn=document.getElementById('endCallBtn');
-const muteBtn=document.getElementById('muteBtn');
-const speakerBtn=document.getElementById('speakerBtn');
+/* call history local */
+function loadCalls(){ return JSON.parse(localStorage.getItem(CALLS_KEY) || "[]"); }
+function saveCalls(c){ localStorage.setItem(CALLS_KEY, JSON.stringify(c)); }
+function renderCalls(){ historyList.innerHTML=''; const cs=loadCalls(); cs.slice().reverse().forEach(it=>{ const el=document.createElement('div'); el.className='item'; el.textContent = `${it.type.toUpperCase()} • ${it.with} • ${it.start} → ${it.end} • ${it.durationMinutes} min`; historyList.appendChild(el); }); }
 
-const uploadPhoto=document.getElementById('uploadPhoto');
-const deleteAllBtn=document.getElementById('deleteAllBtn');
-const blockBtn=document.getElementById('blockBtn');
-const reportBtn=document.getElementById('reportBtn');
+/* timestamps */
+function nowStr(){ return new Date().toLocaleString(); }
 
-// --- UTILS ---
-function saveSession(number){
-  const session = {number, verifiedAt: Date.now()};
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-}
-function loadSession(){
-  const session = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-  if(session && (Date.now() - session.verifiedAt < 432000000)){ // 5 days
-    return session;
-  }
-  return null;
-}
-function checkPIN(){
-  const pin = localStorage.getItem(PIN_KEY);
-  if(pin){
-    const input = prompt("Enter your PIN:");
-    if(input !== pin){ alert("Incorrect PIN!"); return false; }
-  } else {
-    const newPin = prompt("Set a new PIN:");
-    if(newPin) localStorage.setItem(PIN_KEY, newPin);
-  }
-  return true;
-}
-function saveMessages(msgs){
-  localStorage.setItem(MSG_KEY, JSON.stringify(msgs));
-}
-function loadMessages(){
-  return JSON.parse(localStorage.getItem(MSG_KEY) || "[]");
-}
-function renderMessages(){
-  chatBox.innerHTML="";
-  const msgs=loadMessages();
-  msgs.forEach(msg=>{
-    const div=document.createElement('div');
-    div.className='bubble '+(msg.from===myNumber?'sent':'rec');
-    div.innerHTML=`<div>${msg.text}</div><div style="font-size:12px;color:#aaa">${msg.from} • ${msg.time}</div>`;
-    chatBox.appendChild(div);
-  });
-  chatBox.scrollTop=chatBox.scrollHeight;
-}
-
-// --- LOGIN FLOW ---
-sendCodeBtn.onclick = ()=>{
-  const num=numberInput.value.trim();
-  if(!allowedNumbers.includes(num)) return alert("Number not allowed!");
-  if(reports[num] && reports[num].count>=7 && Date.now()-reports[num].last<86400000){
-    return alert("This number is banned for 24h due to multiple reports.");
-  }
-  myNumber=num;
-  otherNumber=allowedNumbers.find(n=>n!==myNumber);
-  verificationCode=Math.floor(1000+Math.random()*9000);
-  alert("Your verification code: "+verificationCode);
-  codeArea.classList.remove('hidden');
-};
-
-verifyBtn.onclick = ()=>{
-  if(codeInput.value.trim()==verificationCode){
-    if(!checkPIN()) return;
-    loginStatus.textContent="Verified! Access granted.";
-    saveSession(myNumber);
-    loginArea.classList.add('hidden');
-    chatArea.classList.remove('hidden');
-    profileImg.src=profiles[otherNumber].photo;
-    profileName.textContent=profiles[otherNumber].name;
-    renderMessages();
-    socket.emit('join', myNumber);
-  }else{ alert("Incorrect code!"); }
-};
-
-// Auto-login
-window.onload = ()=>{
-  const session=loadSession();
-  if(session && checkPIN()){
-    if(reports[session.number] && reports[session.number].count>=7 && Date.now()-reports[session.number].last<86400000){
-      alert("This number is banned for 24h due to multiple reports."); 
-      localStorage.removeItem(STORAGE_KEY);
-      return;
-    }
-    myNumber=session.number;
-    otherNumber=allowedNumbers.find(n=>n!==myNumber);
-    loginArea.classList.add('hidden');
-    chatArea.classList.remove('hidden');
-    profileImg.src=profiles[otherNumber].photo;
-    profileName.textContent=profiles[otherNumber].name;
-    renderMessages();
-    socket.emit('join', myNumber);
-  }
-  if(Notification.permission!=="granted"){ Notification.requestPermission(); }
-};
-
-// --- MESSAGING ---
-sendBtn.onclick = ()=>{
-  if(blocked){ return alert("You blocked this number."); }
-  const txt=messageInput.value.trim();
-  if(!txt) return;
-  const msg={from:myNumber,to:otherNumber,text:txt,time:new Date().toLocaleTimeString()};
-  const msgs=loadMessages();
-  msgs.push(msg);
-  saveMessages(msgs);
+/* --- simple login auto for demo --- */
+function quickLogin(num){
+  myNumber = num;
+  otherNumber = allowedNumbers.find(n=>n!==myNumber);
+  // set profile (demo)
+  cProfile.src = "https://via.placeholder.com/80x80?text=P";
+  cName.textContent = "Mi…";
   renderMessages();
-  socket.emit('message',msg);
+  renderCalls();
+  socket.emit('join', myNumber);
+}
+quickLogin(allowedNumbers[1]); // auto-login demo (you can add real login UI)
+
+/* --- messaging --- */
+sendBtn.onclick = ()=>{
+  const txt = messageInput.value.trim();
+  if(!txt) return;
+  const m = {from: myNumber, to: otherNumber, text: txt, time: new Date().toLocaleTimeString()};
+  const msgs = loadMessages(); msgs.push(m); saveMessages(msgs); renderMessages();
+  socket.emit('message', m);
   messageInput.value='';
 };
-messageInput.addEventListener('keydown',(e)=>{if(e.key==='Enter')sendBtn.click();});
-
 socket.on('message', msg=>{
-  if(blocked) return;
-  const msgs=loadMessages();
-  msgs.push(msg);
-  saveMessages(msgs);
-  renderMessages();
-  if(msg.from!==myNumber){
-    textTone.play();
-    if(Notification.permission==="granted"){
-      new Notification("New Message",{body:msg.text,icon:profiles[msg.from]?.photo});
-    }
-  }
+  const msgs = loadMessages(); msgs.push(msg); saveMessages(msgs); renderMessages();
 });
 
-// --- OPTIONS ---
-uploadPhoto.onchange = (e)=>{
-  const file = e.target.files[0];
-  if(file){
-    const reader=new FileReader();
-    reader.onload=()=>{
-      profiles[myNumber].photo=reader.result;
-      profileImg.src=reader.result;
-      alert("Profile photo updated!");
-    };
-    reader.readAsDataURL(file);
-  }
-};
-deleteAllBtn.onclick = ()=>{
-  if(confirm("Delete all your local messages?")){
-    saveMessages([]);
-    renderMessages();
-  }
-};
-blockBtn.onclick = ()=>{
-  blocked=!blocked;
-  blockBtn.textContent = blocked?"✅ Unblock":"🚫 Block";
-  alert(blocked?"You blocked this number.":"You unblocked this number.");
-};
-reportBtn.onclick = ()=>{
-  if(!reports[otherNumber]) reports[otherNumber]={count:0,last:0};
-  reports[otherNumber].count++;
-  reports[otherNumber].last=Date.now();
-  localStorage.setItem("reports", JSON.stringify(reports));
-  alert("Report submitted. Total reports: "+reports[otherNumber].count);
-};
+/* --- background image upload --- */
+bgInput.addEventListener('change', e=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=> {
+    document.querySelector('.app').style.backgroundImage = `url(${r.result})`;
+    bgThumb.src = r.result;
+  };
+  r.readAsDataURL(f);
+});
 
-// --- CALLS ---
-callBtn.onclick = ()=>{
-  if(inCall){ alert("Already in call"); return;}
-  if(blocked){ return alert("You blocked this number."); }
-  callStatus.classList.remove('hidden');
-  callStatus.textContent="Calling...";
-  socket.emit('call',{to:otherNumber});
-};
-endCallBtn.onclick = ()=>{
+/* --- WebRTC helpers --- */
+const pcConfig = { iceServers:[{urls:'stun:stun.l.google.com:19302'}] };
+
+async function startLocalStream(video){
+  const constraints = { audio:true, video: video ? { facingMode: usingFrontCamera ? "user" : "environment" } : false };
+  localStream = await navigator.mediaDevices.getUserMedia(constraints);
+  if(video){
+    localVideo.srcObject = localStream;
+    localVideo.style.display = selfHidden ? 'none' : 'block';
+  }
+  return localStream;
+}
+
+function makePeerConnection(){
+  peerConnection = new RTCPeerConnection(pcConfig);
+  peerConnection.onicecandidate = (e)=> { if(e.candidate) socket.emit('webrtc-ice',{to:otherNumber,candidate:e.candidate}); };
+  peerConnection.ontrack = (e)=> {
+    remoteVideo.srcObject = e.streams[0];
+    remoteVideo.style.display = 'block';
+    noVideoLabel.style.display = 'none';
+  };
+}
+
+/* start outgoing call (voice or video) */
+async function startCall(video){
+  isVideoCall = !!video;
+  await startLocalStream(video);
+  makePeerConnection();
+  // add tracks
+  localStream.getTracks().forEach(t=>peerConnection.addTrack(t, localStream));
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
+  socket.emit('webrtc-offer',{to:otherNumber,offer});
+  inCall = true;
+  callBanner.style.display='flex';
+  callBannerText.textContent = video ? "Video call — calling..." : "Voice call — calling...";
+  callStartTime = Date.now();
+}
+
+/* end call */
+function endCallLocal(){
   if(!inCall) return;
-  inCall=false;
-  callStatus.textContent="Call ended";
-  socket.emit('declineCall',{to:otherNumber});
-  setTimeout(()=> callStatus.classList.add('hidden'),2000);
-};
-muteBtn.onclick = ()=>{muted=!muted;muteBtn.textContent=muted?"🔈 Unmute":"🔇 Mute";};
-speakerBtn.onclick = ()=>{speaker=!speaker;speakerBtn.textContent=speaker?"📢 Normal":"🔊 Speaker";};
+  socket.emit('endCall',{to:otherNumber});
+  cleanupCall(true);
+}
 
-socket.on('incomingCall', data=>{
-  if(blocked) return;
-  ringTone.play();
-  if(Notification.permission==="granted"){
-    new Notification("Incoming Call",{body:`From ${data.from}`,icon:profiles[data.from]?.photo});
+/* cleanup local resources and store history */
+function cleanupCall(endedByMe=false, remoteInfo){
+  if(peerConnection){
+    peerConnection.getSenders().forEach(s=>{try{s.track.stop();}catch(e){};});
+    peerConnection.close(); peerConnection=null;
   }
-  callStatus.classList.remove('hidden');
-  callStatus.innerHTML=`Incoming call from ${data.from}<br>
-    <button onclick="answerCall()">Answer</button>
-    <button onclick="declineCall()">Decline</button>`;
-});
-function answerCall(){
-  inCall=true;
-  ringTone.pause(); ringTone.currentTime=0;
-  callStatus.textContent="Call connected";
-  socket.emit('answerCall',{to:otherNumber});
+  if(localStream){ localStream.getTracks().forEach(t=>t.stop()); localStream=null; }
+  remoteVideo.srcObject = null; remoteVideo.style.display='none';
+  localVideo.srcObject = null; localVideo.style.display='none';
+  noVideoLabel.style.display = 'block';
+  callBanner.style.display='none';
+  inCall = false;
+  // store call history with duration
+  const end = Date.now();
+  const durationMs = Math.max(0, end - (window.callStartTime||end));
+  const minutes = Math.round(durationMs / 60000 * 100) / 100; // two decimals
+  const calls = loadCalls();
+  calls.push({
+    with: otherNumber,
+    type: isVideoCall ? 'video' : 'voice',
+    start: new Date((window.callStartTime)||end).toLocaleString(),
+    end: new Date(end).toLocaleString(),
+    durationMs,
+    durationMinutes: minutes
+  });
+  saveCalls(calls);
+  renderCalls();
+  // notify server to persist
+  socket.emit('callEndedRecord', {with: otherNumber, type: isVideoCall?'video':'voice', start: window.callStartTime||Date.now(), end});
 }
-function declineCall(){
-  ringTone.pause(); ringTone.currentTime=0;
-  callStatus.textContent="Call declined";
-  socket.emit('declineCall',{to:otherNumber});
-  setTimeout(()=> callStatus.classList.add('hidden'),2000);
-}
-socket.on('callAnswered', data=>{
-  inCall=true;
-  callStatus.textContent="Call connected with "+data.from;
+
+/* toggle camera facing */
+toggleCamBtn.onclick = async ()=>{
+  usingFrontCamera = !usingFrontCamera;
+  if(localStream){
+    // restart video track
+    localStream.getTracks().forEach(t=>t.stop());
+    await startLocalStream(isVideoCall);
+    // replace tracks on peer connection
+    const videoTrack = localStream.getVideoTracks()[0];
+    const sender = peerConnection && peerConnection.getSenders().find(s=>s.track && s.track.kind==='video');
+    if(sender && videoTrack) sender.replaceTrack(videoTrack);
+  }
+  toggleCamBtn.textContent = usingFrontCamera ? 'Front' : 'Back';
+};
+
+/* hide/show self video */
+toggleCamVisBtn.onclick = ()=>{
+  selfHidden = !selfHidden;
+  localVideo.style.display = selfHidden ? 'none' : 'block';
+  toggleCamVisBtn.textContent = selfHidden ? 'Show Self' : 'Hide Self';
+};
+
+endCallLocalBtn.onclick = endCallLocal;
+
+/* --- signalling events from server --- */
+let callStartTime = null;
+
+socket.on('webrtc-offer', async (data)=>{
+  // incoming offer -> create pc, set remote desc, create answer
+  isVideoCall = !!(data.offer.sdp && data.offer.sdp.includes('m=video'));
+  await startLocalStream(isVideoCall);
+  makePeerConnection();
+  localStream.getTracks().forEach(t=>peerConnection.addTrack(t, localStream));
+  await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+  const answer = await peerConnection.createAnswer();
+  await peerConnection.setLocalDescription(answer);
+  socket.emit('webrtc-answer',{to:data.from,answer});
+  inCall = true;
+  callBanner.style.display='flex';
+  callBannerText.textContent = isVideoCall ? "Video call — In call" : "Voice call — In call";
+  window.callStartTime = Date.now();
 });
-socket.on('callDeclined', data=>{
-  ringTone.pause(); ringTone.currentTime=0;
-  callStatus.textContent="Call declined by "+data.from;
-  setTimeout(()=> callStatus.classList.add('hidden'),2000);
+
+socket.on('webrtc-answer', async (data)=>{
+  await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+  // call connected
+  callStartTime = Date.now();
+  callBannerText.textContent = isVideoCall ? "Video call — In call" : "Voice call — In call";
 });
+
+socket.on('webrtc-ice', async (data)=>{
+  try{
+    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+  }catch(e){}
+});
+
+socket.on('endCall', (data)=>{
+  cleanupCall(false, data);
+});
+
+/* when remote hangs up, server sends 'endCall' */
+socket.on('callEndedRecordAck', ()=>{/* server persisted record */});
+
+/* --- outgoing buttons --- */
+voiceCallBtn.onclick = ()=> startCall(false);
+videoCallBtn.onclick = ()=> startCall(true);
+
+/* track callStarted locally */
+window.addEventListener('beforeunload', ()=>{ if(inCall) cleanupCall(true); });
+
+/* toggle showing call banner click to return */
+callBanner.onclick = ()=> window.scrollTo(0,0);
+
+/* history UI initial */
+renderCalls();
+
+/* keep socket message handlers for chat & simple events */
+socket.on('connect', ()=>{ console.log('socket connected'); });
+
 </script>
 </body>
 </html>
