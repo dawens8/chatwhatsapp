@@ -1,13 +1,13 @@
 {
-  "name": "2-number-live-chat",
+  "name": "two-number-chat",
   "version": "1.0.0",
-  "description": "2-number live chat and call simulation",
+  "description": "2-number chat & call app with block, report, profile features",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "socket.io": "^4.7.2"
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
   }
 }
