@@ -3,53 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dawens Chat & Call</title>
-  <style>
-    body {margin:0; padding:0; font-family:Arial, sans-serif; background:#111; color:white;}
-    .chat-area {height:60vh; overflow:auto; padding:10px; background:#222;}
-    .bubble {padding:10px 14px; margin:6px; border-radius:12px; max-width:70%;}
-    .sent {background:#25D366; color:#000; margin-left:auto;}
-    .rec {background:#fff; color:#000; margin-right:auto;}
-    .controls {display:flex; padding:10px; background:#111;}
-    .controls input {flex:1; padding:10px; border-radius:6px; border:none;}
-    .controls button {margin-left:6px; padding:10px 14px; border:none; border-radius:6px; cursor:pointer;}
-
-    /* --- Call Screen --- */
-    #callScreen {position:fixed; top:0; left:0; width:100%; height:100%; 
-                 background:#000; display:none; flex-direction:column; justify-content:center; align-items:center;}
-    #remoteVideo {width:100%; height:100%; object-fit:cover; position:absolute;}
-    #localVideo {width:150px; height:200px; object-fit:cover; position:absolute; bottom:100px; right:20px; border-radius:12px;}
-    #callControls {position:absolute; bottom:20px; display:flex; gap:20px;}
-    #callControls button {width:60px; height:60px; border-radius:50%; font-size:20px; border:none; cursor:pointer;}
-    .end {background:red; color:white;}
-    .mute {background:#444; color:white;}
-    .video {background:#444; color:white;}
-    .speaker {background:#444; color:white;}
-    .timer {position:absolute; top:20px; color:white; font-size:18px;}
-  </style>
+  <title>DawenSapp Chat</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h2 style="text-align:center;">Dawens Chat & Call</h2>
-
-  <!-- Chat Zone -->
-  <div class="chat-area" id="chatBox"></div>
-  <div class="controls">
-    <input type="text" id="messageInput" placeholder="Type message..."/>
+  <div id="chatArea">
+    <h2>DawenSapp Chat</h2>
+    <div id="chatBox"></div>
+    <input type="text" id="messageInput" placeholder="Type a message..."/>
     <button id="sendBtn">Send</button>
-    <button id="audioCallBtn">📞</button>
-    <button id="videoCallBtn">📹</button>
+    <button id="audioCallBtn">📞 Audio Call</button>
+    <button id="videoCallBtn">📹 Video Call</button>
   </div>
 
   <!-- Call Screen -->
-  <div id="callScreen">
-    <video id="remoteVideo" autoplay playsinline></video>
-    <video id="localVideo" autoplay playsinline muted></video>
-    <div class="timer" id="callTimer">00:00</div>
+  <div id="callScreen" class="hidden">
+    <div id="remoteVideoWrapper">
+      <video id="remoteVideo" autoplay playsinline></video>
+    </div>
+    <div id="localVideoWrapper">
+      <video id="localVideo" autoplay playsinline muted></video>
+    </div>
+    <div id="callInfo">
+      <p id="callStatus">Calling...</p>
+      <p id="callTimer">00:00</p>
+    </div>
     <div id="callControls">
-      <button id="muteBtn" class="mute">🎤</button>
-      <button id="videoBtn" class="video">📷</button>
-      <button id="speakerBtn" class="speaker">🔊</button>
-      <button id="endCallBtn" class="end">❌</button>
+      <button id="toggleMic">🎤</button>
+      <button id="toggleCam">📹</button>
+      <button id="toggleSpeaker">🔊</button>
+      <button id="endCall" style="background:red;color:white;">❌ End</button>
     </div>
   </div>
 
