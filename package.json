@@ -1,7 +1,6 @@
 {
-  "name": "two-number-chat",
+  "name": "dawens-chat-call",
   "version": "1.0.0",
-  "description": "Chat + voice/video demo with WebRTC signaling and call history",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
